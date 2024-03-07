@@ -1,0 +1,3 @@
+[submodule "Deps/libnpy"]
+	path = Deps/libnpy
+	url = https://github.com/llohse/libnpy.git

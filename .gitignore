@@ -1,3 +1,17 @@
 build/
 
+# Python
+bin/
+lib/
+lib64
+include/
+pyvenv.cfg
+
+
+# models
+*.glb
+
+
+
+
 

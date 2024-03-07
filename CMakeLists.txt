@@ -2,11 +2,14 @@ cmake_minimum_required(VERSION 3.25)
 project(FastVoxels)
 
 
-file (GLOB_RECURSE SOURCES "${PROJECT_SOURCE_DIR}/Source/FastVoxels/*.cpp")
+file (GLOB_RECURSE SOURCES "${PROJECT_SOURCE_DIR}/Source/*.cpp")
 
 add_executable(FastVoxels ${SOURCES})
 
-target_include_directories(FastVoxels PUBLIC "${PROJECT_SOURCE_DIR}/Include")
+target_include_directories(FastVoxels PUBLIC 
+    "${PROJECT_SOURCE_DIR}/Include"
+    "${PROJECT_SOURCE_DIR}/Deps/libnpy/include")
+
 
 # Add custom command to copy Scenes folder to build directory
 add_custom_command(TARGET FastVoxels POST_BUILD
