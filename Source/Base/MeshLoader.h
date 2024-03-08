@@ -5,6 +5,7 @@
 #include <vulkan/vulkan.hpp>
 #include <tiny_gltf.h>
 #include "Camera.h"
+#define GLM_ENABLE_EXPERIMENTAL
 #include <glm/gtx/matrix_major_storage.hpp>
 #include "GPUMaterial.h"
 

@@ -1,8 +1,7 @@
 #include "Vulray/Vulray.h"
-#include "Common.h"
-#include "Application.h"
-#include "FileRead.h"
-#include "ShaderCompiler.h"
+#include "Base/Application.h"
+#include "Base/FileRead.h"
+#include "Base/ShaderCompiler.h"
 #include <filesystem>
 
 class HelloTriangle : public Application
@@ -207,7 +206,7 @@ void HelloTriangle::CreateRTPipeline()
 
     // Shader compiler class from from Base/ will perform HLSL -> SPIR-V translation.
     // DXC compiler will use lib_6_5 to compile any of the ray tracing stages eg. eRaygenKHR, eMissKHR, eClosestHitKHR, eAnyHitKHR, eIntersectionKHR
-    auto spv = mShaderCompiler.CompileSPIRVFromFile("Shaders/ColorfulTriangle/ColorfulTriangle.hlsl");
+    auto spv = mShaderCompiler.CompileSPIRVFromFile("Shaders/BasicColor.hlsl");
     // since HLSL allows multiple entry points in a single shader, we have all of the ray tracing stages in one shader
     // if compiling from glsl we would have to create a separate shader module for each stage
     auto shaderModule = mVRDev->CreateShaderFromSPV(spv);

@@ -1,15 +1,12 @@
+
+# Build directory
 build/
 
-# Python
-bin/
-lib/
-lib64
-include/
-pyvenv.cfg
+# IDE files
+.vscode/
 
-
-# models
-*.glb
+# Scenes
+Scenes/
 
 
 
