@@ -13,8 +13,6 @@ Application::Application()
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // Sets the client API to GLFW_NO_API, which means that the application will not create an OpenGL context
 
-    glfwWindowHint(GLFW_PLATFORM, GLFW_PLATFORM_X11); // Sets the platform to GLFW_PLATFORM_X11, which means that the application will use the X11 windowing system
-
     mWindow = glfwCreateWindow(mWindowWidth, mWindowHeight, "FastVoxels", nullptr, nullptr); // Creates a window
 
     // specify debug callback by passing a pointer to the function if you want to use it
