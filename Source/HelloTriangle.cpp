@@ -3,6 +3,7 @@
 #include "Base/ShaderCompiler.h"
 #include "Base/Application.h"
 #include "Base/FileRead.h"
+#include "Base/MeshLoader.h"
 
 class BoxIntersections : public Application
 {
@@ -19,6 +20,8 @@ public:
 public:
     ShaderCompiler mShaderCompiler;
 
+    MeshLoader mMeshLoader;
+
     vr::AllocatedBuffer mAABBBuffer;
 
     vr::SBTBuffer mSBTBuffer;
@@ -30,7 +33,7 @@ public:
     vk::Pipeline mRTPipeline = nullptr;
     vk::PipelineLayout mPipelineLayout = nullptr;
 
-    vr::BLASHandle mBLASHandle;
+    std::vector<vr::BLASHandle> mBLASHandles;
     vr::TLASHandle mTLASHandle;
 };
 
@@ -47,42 +50,74 @@ void BoxIntersections::Start()
 
 void BoxIntersections::CreateAS()
 {
+    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.1f, 1.0f);
 
-    uint32_t boxSize = sizeof(vk::AabbPositionsKHR); // 2 vec3s for the min and max of the AABB
+    uint64_t sceneSize = 0;
 
-    // [POI]
-    // AABB for a box
-    auto box = vk::AabbPositionsKHR(-1.0f, -1.0f, -1.0f, 1.0f, 1.0f, 1.0f);
+    for (auto& geom : scene.Geometries)
+    {
+		sceneSize += geom.Positions.size() * sizeof(vk::AabbPositionsKHR);
+	}
 
     mAABBBuffer = mVRDev->CreateBuffer(
-        boxSize,
+        sceneSize,
         vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT); // this buffer will be used as a source for the BLAS
 
-    // copy the AABB to the buffer
-    mVRDev->UpdateBuffer(mAABBBuffer, &box, boxSize);
+    // Convert Point Cloud to AABBs
 
-    vr::BLASCreateInfo blasCreateInfo = {};
-    blasCreateInfo.Flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
+    std::vector<vr::BLASCreateInfo> blasCreateInfos = {};
 
-    // [POI]
-    vr::GeometryData geomData = {};
-    // Set the geometry type to AABBs, default is Triangles
-    geomData.Type = vk::GeometryTypeKHR::eAabbs;
-    geomData.PrimitiveCount = 1;         // 1 box
-    geomData.Stride = sizeof(float) * 6; // vec3 min, vec3 max
-    // All other data is not used for AABBs, like index and vertex buffers, and index/vertex format
+    uint64_t offset = 0;
+    std::vector<vk::AabbPositionsKHR> aabbs = {};
+    aabbs.reserve(sceneSize / sizeof(vk::AabbPositionsKHR));
 
-    // Set the AABB buffer as the data source
-    geomData.DataAddresses.AABBDevAddress = mAABBBuffer.DevAddress;
+    for (auto& mesh : scene.Meshes)
+    {
+        auto& blasInfo = blasCreateInfos.emplace_back();
 
-    blasCreateInfo.Geometries.push_back(geomData);
+        for (auto& geomRef : mesh.GeometryReferences)
+        {
+            auto& geomData = blasInfo.Geometries.emplace_back();
+			auto& geom = scene.Geometries[geomRef];
 
-    auto [blasHandle, blasBuildInfo] = mVRDev->CreateBLAS(blasCreateInfo);
+            geomData.Type = vk::GeometryTypeKHR::eAabbs;
+            geomData.PrimitiveCount = geom.Positions.size();
+            geomData.Stride = sizeof(vk::AabbPositionsKHR);
+            geomData.DataAddresses.AABBDevAddress = mAABBBuffer.DevAddress + offset;
 
-    mBLASHandle = blasHandle;
+            for (auto& pos : geom.Positions)
+            {
+                const float voxSide = scene.VoxelSize / 2.0f;
 
-    auto BLASscratchBuffer = mVRDev->CreateScratchBufferFromBuildInfo(blasBuildInfo);
+				auto aabb = vk::AabbPositionsKHR();
+                aabb.minX = pos.x - voxSide;
+                aabb.minY = pos.y - voxSide;
+                aabb.minZ = pos.z - voxSide;
+                aabb.maxX = pos.x + voxSide;
+                aabb.maxY = pos.y + voxSide;
+                aabb.maxZ = pos.z + voxSide;
+
+                aabbs.push_back(aabb);
+            }
+		}
+    }
+
+    std::vector<vr::BLASBuildInfo> buildInfos = {};
+
+    for (auto& blasCreateInfo : blasCreateInfos)
+    {
+        auto& buildInfo = buildInfos.emplace_back();
+        auto& blasHandle = mBLASHandles.emplace_back();
+
+        std::tie(blasHandle, buildInfo) = mVRDev->CreateBLAS(blasCreateInfo);
+	}
+
+    mVRDev->UpdateBuffer(mAABBBuffer, aabbs.data(), sceneSize, 0);
+
+
+    auto BLASscratchBuffer = mVRDev->CreateScratchBufferFromBuildInfos(buildInfos);
+
 
     // create a TLAS
     vr::TLASCreateInfo tlasCreateInfo = {};
@@ -96,29 +131,36 @@ void BoxIntersections::CreateAS()
     auto TLASScratchBuffer = mVRDev->CreateScratchBufferFromBuildInfo(tlasBuildInfo);
 
     // create a buffer for the instance data
-    auto InstanceBuffer = mVRDev->CreateInstanceBuffer(1); // 1 instance
+    auto InstanceBuffer = mVRDev->CreateInstanceBuffer(mBLASHandles.size());
 
     // Specify the instance data
-    auto inst = vk::AccelerationStructureInstanceKHR()
-                    .setInstanceCustomIndex(0)
-                    .setAccelerationStructureReference(mBLASHandle.Buffer.DevAddress)
-                    .setFlags(vk::GeometryInstanceFlagBitsKHR::eForceOpaque)
-                    .setMask(0xFF)
-                    .setInstanceShaderBindingTableRecordOffset(0);
 
-    // set the transform matrix to identity
-    inst.transform = {
-        1.0f, 0.0f, 0.0f, 0.0f,
-        0.0f, 1.0f, 0.0f, 0.0f,
-        0.0f, 0.0f, 1.0f, 0.0f};
+    offset = 0;
+    for (auto& blasHandle : mBLASHandles)
+    {
+		auto inst = vk::AccelerationStructureInstanceKHR()
+					.setInstanceCustomIndex(0)
+					.setAccelerationStructureReference(blasHandle.Buffer.DevAddress)
+					.setFlags(vk::GeometryInstanceFlagBitsKHR::eForceOpaque)
+					.setMask(0xFF)
+					.setInstanceShaderBindingTableRecordOffset(0);
 
-    mVRDev->UpdateBuffer(InstanceBuffer, &inst, sizeof(vk::AccelerationStructureInstanceKHR), 0);
+		// set the transform matrix to identity
+        inst.transform = {
+			1.0f, 0.0f, 0.0f, 0.0f,
+			0.0f, 1.0f, 0.0f, 0.0f,
+			0.0f, 0.0f, 1.0f, 0.0f};
+
+		mVRDev->UpdateBuffer(InstanceBuffer, &inst, sizeof(vk::AccelerationStructureInstanceKHR), offset);
+
+		offset += sizeof(vk::AccelerationStructureInstanceKHR);
+	}
+
 
     auto buildCmd = mDevice.allocateCommandBuffers(vk::CommandBufferAllocateInfo(mGraphicsPool, vk::CommandBufferLevel::ePrimary, 1))[0];
 
     buildCmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
 
-    std::vector<vr::BLASBuildInfo> buildInfos = {blasBuildInfo};
 
     mVRDev->BuildBLAS(buildInfos, buildCmd);
 
@@ -151,8 +193,9 @@ void BoxIntersections::CreateRTPipeline()
 
     mResourceBindings = {
         vr::DescriptorItem(0, vk::DescriptorType::eAccelerationStructureKHR, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mTLASHandle.Buffer.DevAddress),
-        vr::DescriptorItem(1, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mUniformBuffer),
-        vr::DescriptorItem(2, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mOutputImage)};
+        vr::DescriptorItem(1, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR, 1, &mUniformBuffer),
+        vr::DescriptorItem(2, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mOutputImage),
+    };
 
     mResourceDescriptorLayout = mVRDev->CreateDescriptorSetLayout(mResourceBindings);
 
@@ -253,7 +296,11 @@ void BoxIntersections::Stop()
 
     mVRDev->DestroyBuffer(mAABBBuffer);
 
-    mVRDev->DestroyBLAS(mBLASHandle);
+    for (auto& blasHandle : mBLASHandles)
+    {
+		mVRDev->DestroyBLAS(blasHandle);
+	}
+
     mVRDev->DestroyTLAS(mTLASHandle);
 }
 

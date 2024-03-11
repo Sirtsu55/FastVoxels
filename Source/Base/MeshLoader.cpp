@@ -8,10 +8,15 @@
 
 // Simply Load a gltf file
 
+#define VOXELIZER_IMPLEMENTATION
+#include "voxelizer.h"
 
-Scene MeshLoader::LoadGLBMesh(const std::string& path)
+
+VoxelScene MeshLoader::LoadVoxelizedGLBScene(const std::string& path, float size, float resolution)
 {
-    Scene outScene = {};
+    VoxelScene outScene = {};
+    outScene.VoxelSize = size;
+    outScene.Resolution = resolution;
 
     tinygltf::Model model;
 
@@ -56,7 +61,7 @@ Scene MeshLoader::LoadGLBMesh(const std::string& path)
         if(node.camera != -1)
         {
             auto& camera = model.cameras[node.camera];
-            auto& outCamera = outScene.Cameras.emplace_back(Camera{});
+            auto& outCamera = outScene.Cameras.emplace_back();
             outCamera.Fov = glm::degrees(camera.perspective.yfov);
             outCamera.AspectRatio = camera.perspective.aspectRatio;
             outCamera.NearPlane = camera.perspective.znear;
@@ -70,7 +75,7 @@ Scene MeshLoader::LoadGLBMesh(const std::string& path)
 }
 
 
-void MeshLoader::AddMeshToScene(const tinygltf::Mesh& mesh, tinygltf::Model& model, Scene& outScene)
+void MeshLoader::AddMeshToScene(const tinygltf::Mesh& mesh, tinygltf::Model& model, VoxelScene& outScene)
 {
     auto& outMesh = outScene.Meshes.emplace_back();
     for (auto& primitive : mesh.primitives)
@@ -78,17 +83,21 @@ void MeshLoader::AddMeshToScene(const tinygltf::Mesh& mesh, tinygltf::Model& mod
         // get index of the new geometry
         outMesh.GeometryReferences.push_back(outScene.Geometries.size());
         // add new geometry
-        auto& outGeom = outScene.Geometries.emplace_back(Geometry{});
+        auto& outGeom = outScene.Geometries.emplace_back();
+
+        std::vector<glm::vec3> positions = {};
+        std::vector<uint32_t> indices = {};
 
         // Get indices
-        auto indices = primitive.indices;
-        if (indices != -1)
+        auto idx = primitive.indices;
+
+        if (idx != -1)
         {
-            auto& indicesAccessor = model.accessors[indices];
+            auto& indicesAccessor = model.accessors[idx];
             auto& indicesView = model.bufferViews[indicesAccessor.bufferView];
             auto& indicesBuffer = model.buffers[indicesView.buffer];
             auto& indicesData = indicesBuffer.data;
-            outGeom.Indices.resize(indicesAccessor.count);
+            indices.resize(indicesAccessor.count);
 
             auto components = GetComponentsFromTinyGLTFType(indicesAccessor.type);
             auto size = GetSizeFromType(indicesAccessor.componentType);
@@ -99,7 +108,7 @@ void MeshLoader::AddMeshToScene(const tinygltf::Mesh& mesh, tinygltf::Model& mod
                 auto* data = reinterpret_cast<uint32_t*>(indicesData.data() + indicesView.byteOffset);
                 for (int i = 0; i < indicesAccessor.count; i++)
                 {
-                    outGeom.Indices[i] = data[i];
+                    indices[i] = data[i];
                 }
             }
             else if(size == 2 && components == 1)
@@ -107,7 +116,7 @@ void MeshLoader::AddMeshToScene(const tinygltf::Mesh& mesh, tinygltf::Model& mod
                 auto* data = reinterpret_cast<uint16_t*>(indicesData.data() + indicesView.byteOffset);
                 for (int i = 0; i < indicesAccessor.count; i++)
                 {
-                    outGeom.Indices[i] = data[i];
+                    indices[i] = data[i];
                 }
             }
             else
@@ -115,14 +124,14 @@ void MeshLoader::AddMeshToScene(const tinygltf::Mesh& mesh, tinygltf::Model& mod
 
         }
         // Get positions
-        auto positions = primitive.attributes.find("POSITION");
-        if (positions != primitive.attributes.end())
+        auto pos = primitive.attributes.find("POSITION");
+        if (pos != primitive.attributes.end())
         {
-            auto& positionsAccessor = model.accessors[positions->second];
+            auto& positionsAccessor = model.accessors[pos->second];
             auto& positionsView = model.bufferViews[positionsAccessor.bufferView];
             auto& positionsBuffer = model.buffers[positionsView.buffer];
             auto& positionsData = positionsBuffer.data;
-            outGeom.Vertices.resize(positionsAccessor.count);
+            positions.resize(positionsAccessor.count);
             auto components = GetComponentsFromTinyGLTFType(positionsAccessor.type);
             auto size = GetSizeFromType(positionsAccessor.componentType);
 
@@ -132,7 +141,7 @@ void MeshLoader::AddMeshToScene(const tinygltf::Mesh& mesh, tinygltf::Model& mod
                 auto* data = reinterpret_cast<glm::vec3*>(positionsData.data() + positionsView.byteOffset);
                 for (int i = 0; i < positionsAccessor.count; i++)
                 {
-                    outGeom.Vertices[i].Position = data[i];
+                    positions[i] = data[i];
                 }
             }
             else if(size == 8 && components == 3)
@@ -140,44 +149,11 @@ void MeshLoader::AddMeshToScene(const tinygltf::Mesh& mesh, tinygltf::Model& mod
                 auto* data = reinterpret_cast<glm::dvec3*>(positionsData.data() + positionsView.byteOffset);
                 for (int i = 0; i < positionsAccessor.count; i++)
                 {
-                    outGeom.Vertices[i].Position = glm::vec3(data[i]);
+                    positions[i] = glm::vec3(data[i]);
                 }
             }
             else
                 throw std::runtime_error("Unsupported position type");
-        }
-        // Get normals
-        auto normals = primitive.attributes.find("NORMAL");
-        if (normals != primitive.attributes.end())
-        {
-            auto& normalsAccessor = model.accessors[normals->second];
-            auto& normalsView = model.bufferViews[normalsAccessor.bufferView];
-            auto& normalsBuffer = model.buffers[normalsView.buffer];
-            auto& normalsData = normalsBuffer.data;
-            outGeom.Vertices.resize(normalsAccessor.count);
-
-            auto components = GetComponentsFromTinyGLTFType(normalsAccessor.type);
-            auto size = GetSizeFromType(normalsAccessor.componentType);
-
-            // size == 4, float is 4 bytes, components == 3, vec3 is 3 components
-            if(size == 4 && components == 3)
-            {
-                auto* data = reinterpret_cast<glm::vec3*>(normalsData.data() + normalsView.byteOffset);
-                for (int i = 0; i < normalsAccessor.count; i++)
-                {
-                    outGeom.Vertices[i].Normal = data[i];
-                }
-            }
-            else if(size == 8 && components == 3)
-            {
-                auto* data = reinterpret_cast<glm::dvec3*>(normalsData.data() + normalsView.byteOffset);
-                for (int i = 0; i < normalsAccessor.count; i++)
-                {
-                    outGeom.Vertices[i].Normal = glm::vec3(data[i]);
-                }
-            }
-            else
-                throw std::runtime_error("Unsupported normal type");
         }
 
         // get material
@@ -196,37 +172,25 @@ void MeshLoader::AddMeshToScene(const tinygltf::Mesh& mesh, tinygltf::Model& mod
                 outGeom.Material.MetallicFactor = pbr.metallicFactor;
             if(pbr.roughnessFactor != -1)
                 outGeom.Material.RoughnessFactor = pbr.roughnessFactor;
-            if(pbr.baseColorTexture.index != -1)
-            {
-                auto& texture = model.textures[pbr.baseColorTexture.index];
-                auto& image = model.images[texture.source];
-                auto& view = model.bufferViews[image.bufferView];
-                auto& buffer = model.buffers[view.buffer];
-                auto& data = buffer.data;
-                outGeom.Material.BaseColorTexture.resize(view.byteLength);
-                memcpy(outGeom.Material.BaseColorTexture.data(), data.data() + view.byteOffset, view.byteLength);
-            }
-            if(pbr.metallicRoughnessTexture.index != -1)
-            {
-                auto& texture = model.textures[pbr.metallicRoughnessTexture.index];
-                auto& image = model.images[texture.source];
-                auto& view = model.bufferViews[image.bufferView];
-                auto& buffer = model.buffers[view.buffer];
-                auto& data = buffer.data;
-                outGeom.Material.MetallicRoughnessTexture.resize(view.byteLength);
-                memcpy(outGeom.Material.MetallicRoughnessTexture.data(), data.data() + view.byteOffset, view.byteLength);
-            }
-            if(mat.normalTexture.index != -1)
-            {
-                auto& texture = model.textures[mat.normalTexture.index];
-                auto& image = model.images[texture.source];
-                auto& view = model.bufferViews[image.bufferView];
-                auto& buffer = model.buffers[view.buffer];
-                auto& data = buffer.data;
-                outGeom.Material.NormalTexture.resize(view.byteLength);
-                memcpy(outGeom.Material.NormalTexture.data(), data.data() + view.byteOffset, view.byteLength);
-            }
         }
+
+        // Now we have the data, we can voxelize the mesh
+
+        static_assert(sizeof(glm::vec3) == sizeof(vx_vertex_t));
+
+        vx_mesh_t vxMesh = {};
+        vxMesh.vertices = reinterpret_cast<vx_vertex_t*>(positions.data());
+        vxMesh.nvertices = positions.size();
+        vxMesh.indices = indices.data();
+        vxMesh.nindices = indices.size();
+
+        auto* point_cloud = vx_voxelize_pc(&vxMesh, outScene.VoxelSize, outScene.VoxelSize, outScene.VoxelSize, outScene.Resolution);
+
+        // Now we have the point cloud, we can convert it to a voxel geometry
+        outGeom.Positions.resize(point_cloud->nvertices);
+
+        memcpy(outGeom.Positions.data(), point_cloud->vertices, point_cloud->nvertices * sizeof(glm::vec3));
+
     }
 }
 

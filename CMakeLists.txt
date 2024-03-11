@@ -22,12 +22,13 @@ file (GLOB_RECURSE SOURCES "${PROJECT_SOURCE_DIR}/Source/*.cpp")
 
 add_executable(FastVoxels ${SOURCES})
 
-set (CMAKE_CXX_STANDARD 20)
+set_property(TARGET FastVoxels PROPERTY CXX_STANDARD 20)
 
 target_include_directories(FastVoxels PUBLIC 
     "${PROJECT_SOURCE_DIR}/Source"
     "${PROJECT_SOURCE_DIR}/Deps/libnpy/include"
     "${PROJECT_SOURCE_DIR}/Deps/tinygltf"
+    "${PROJECT_SOURCE_DIR}/Deps/voxelizer"
     )
 
 
@@ -45,7 +46,7 @@ target_precompile_headers(FastVoxels PRIVATE "${PROJECT_SOURCE_DIR}/Source/Base/
 add_custom_command(
     TARGET FastVoxels POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/Shaders $<TARGET_FILE_DIR:FastVoxels>/Shaders
-    #COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/Assets $<TARGET_FILE_DIR:FastVoxels>/Assets
+    COMMAND ${CMAKE_COMMAND} -E copy_directory ${CMAKE_SOURCE_DIR}/Assets $<TARGET_FILE_DIR:FastVoxels>/Assets
     COMMENT "Copying shaders for ${tgt}")
 if(WIN32)
    add_custom_command(

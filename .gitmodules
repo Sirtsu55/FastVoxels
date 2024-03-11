@@ -1,15 +1,24 @@
 [submodule "Deps/libnpy"]
 	path = Deps/libnpy
 	url = https://github.com/llohse/libnpy.git
+	shallow = true
 [submodule "Deps/Vulray"]
 	path = Deps/Vulray
 	url = https://github.com/sirtsu55/vulray.git
+	shallow = true
 [submodule "Deps/glm"]
 	path = Deps/glm
 	url = https://github.com/g-truc/glm.git
+	shallow = true
 [submodule "Deps/glfw"]
 	path = Deps/glfw
 	url = https://github.com/glfw/glfw.git
+	shallow = true
 [submodule "Deps/tinygltf"]
 	path = Deps/tinygltf
 	url = https://github.com/syoyo/tinygltf.git
+	shallow = true
+[submodule "Deps/voxelizer"]
+	path = Deps/voxelizer
+	url = https://github.com/karimnaaji/voxelizer.git
+	shallow = true
