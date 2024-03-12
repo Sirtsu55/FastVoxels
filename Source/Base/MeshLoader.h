@@ -18,7 +18,7 @@ struct Mesh
     glm::mat3x4 Transform = glm::mat3x4(1.0f); 
 };
 
-struct Material
+struct MaterialDesc
 {
     glm::vec4 BaseColorFactor = glm::vec4(1.0f);
     float MetallicFactor = 1.0f;
@@ -31,7 +31,7 @@ struct VoxelGeometry
 {
     std::vector<glm::vec3> Positions;
 
-    Material Material;
+    MaterialDesc Material;
 };
 
 struct VoxelScene

@@ -50,7 +50,7 @@ void BoxIntersections::Start()
 
 void BoxIntersections::CreateAS()
 {
-    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.1f, 1.0f);
+    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.5f, 1.0f);
 
     uint64_t sceneSize = 0;
 
