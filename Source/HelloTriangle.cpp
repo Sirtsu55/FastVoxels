@@ -50,7 +50,7 @@ void BoxIntersections::Start()
 
 void BoxIntersections::CreateAS()
 {
-    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.5f, 1.0f);
+    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.1f, 1.0f);
 
     uint64_t sceneSize = 0;
 
@@ -195,6 +195,7 @@ void BoxIntersections::CreateRTPipeline()
         vr::DescriptorItem(0, vk::DescriptorType::eAccelerationStructureKHR, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mTLASHandle.Buffer.DevAddress),
         vr::DescriptorItem(1, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR, 1, &mUniformBuffer),
         vr::DescriptorItem(2, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mOutputImage),
+        vr::DescriptorItem(3, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR, 1, &mAABBBuffer),
     };
 
     mResourceDescriptorLayout = mVRDev->CreateDescriptorSetLayout(mResourceBindings);
@@ -202,9 +203,6 @@ void BoxIntersections::CreateRTPipeline()
     mPipelineLayout = mVRDev->CreatePipelineLayout(mResourceDescriptorLayout);
 
     // create shaders for the ray tracing pipeline
-
-    // [POI]
-    // Have a look at the shader file to see how the intersection shader is set up
     auto spv = mShaderCompiler.CompileSPIRVFromFile("Shaders/BasicShader.hlsl");
     auto shaderModule = mVRDev->CreateShaderFromSPV(spv);
 
@@ -212,10 +210,6 @@ void BoxIntersections::CreateRTPipeline()
     pipelineSettings.PipelineLayout = mPipelineLayout;
     pipelineSettings.MaxRecursionDepth = 1;
     pipelineSettings.MaxPayloadSize = sizeof(glm::vec3);
-    // [POI]
-    // The size of the data that is passed to the hit shader, from the intersection shader
-    // In the shadercode BoxHitAttributes is a struct with float2 = 8 bytes and glm::vec2 = 8 bytes
-    // So this has to match the size of the struct
     pipelineSettings.MaxHitAttributeSize = sizeof(glm::vec3);
 
     vr::RayTracingShaderCollection shaderCollection = {};
@@ -228,9 +222,6 @@ void BoxIntersections::CreateRTPipeline()
     vr::HitGroup hitGroup = {};
     hitGroup.ClosestHitShader = shaderModule;
     hitGroup.ClosestHitShader.EntryPoint = "chit";
-    // [POI]
-    // Set the intersection shader to the same hitgroup as the closest hit shader
-    // The intersection shader will call the closest hit shader in the same hitgroup if it reports a hit
     hitGroup.IntersectionShader = shaderModule;
     hitGroup.IntersectionShader.EntryPoint = "isect";
     shaderCollection.HitGroups.push_back(hitGroup);

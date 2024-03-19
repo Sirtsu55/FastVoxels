@@ -1,4 +1,13 @@
-// vk::binding(binding, set)
+#include "Shaders/Ray.hlsl"
+#include "Shaders/Random.hlsl"
+#include "Shaders/Sampling.hlsl"
+
+struct AABB
+{
+    float3 Min;
+    float3 Max;
+};
+
 [[vk::binding(0, 0)]] RaytracingAccelerationStructure rs;
 [[vk::binding(1, 0)]]
 cbuffer uniformBuffer
@@ -8,11 +17,15 @@ cbuffer uniformBuffer
     float4 otherInfo;
 };
 [[vk::binding(2, 0)]] RWTexture2D<float4> image;
+[[vk::binding(3, 0)]] StructuredBuffer<AABB> aabbBuffer;
+
 
 
 struct Payload
 {
-    [[vk::location(0)]] float3 hitValue;
+    [[vk::location(0)]] float3 HitColor;
+
+    [[vk::location(1)]] float3 NextRayDir;
 };
 
 [shader("raygeneration")]
@@ -21,33 +34,27 @@ void rgen()
     uint3 LaunchID = DispatchRaysIndex();
     uint3 LaunchSize = DispatchRaysDimensions();
 
-    const float2 pixelCenter = float2(LaunchID.xy) + float2(0.5, 0.5);
-    const float2 inUV = pixelCenter / float2(LaunchSize.xy);
-    float2 d = inUV * 2.0 - 1.0;
-    float4 target = mul(projInverse, float4(d.x, d.y, 1, 1));
-
-    RayDesc rayDesc;
-    rayDesc.Origin = mul(viewInverse, float4(0, 0, 0, 1)).xyz;
-    rayDesc.Direction = mul(viewInverse, float4(normalize(target.xyz), 0)).xyz;
-    rayDesc.TMin = 0.001;
-    rayDesc.TMax = 10000.0;
+    RayDesc rayDesc = ConstructRay(viewInverse, projInverse);
 
     Payload payload;
+
+    float3 Radiance = float3(1.0, 1.0, 1.0);
+
     TraceRay(rs, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, rayDesc, payload);
 
-    image[int2(LaunchID.xy)] = float4(payload.hitValue, 0.0);
+    image[int2(LaunchID.xy)] = float4(payload.HitColor, 0.0);
 }
 
 struct BoxHitAttributes
 {
-    float3 Value;
+    float3 Normal;
 };
 
 [shader("intersection")]
 void isect()
 {
     BoxHitAttributes attribs;
-    attribs.Value = float3(1.0, 1.0, 1.0);
+
     
     ReportHit(RayTCurrent(), 0, attribs);
 }
@@ -55,12 +62,23 @@ void isect()
 [shader("closesthit")]
 void chit(inout Payload p, in BoxHitAttributes attribs)
 {
-    p.hitValue = float3(1.0f, 1.0f, 1.0f);
+    p.HitColor = float3(1.0f, 1.0f, 1.0f);
+
+    // Reflect the ray around the normal
+    // p.NextRayDir = reflect(WorldRayDirection(), normal);
+
+    // Get the AABB geometry
+    AABB aabb = aabbBuffer[PrimitiveIndex()];
+
+    p.HitColor = aabb.Max - aabb.Min;
 }
 
 
 [shader("miss")]
 void miss(inout Payload p)
 {
-    p.hitValue = float3(0.0, 0.0, 0.2);
+    // RT in one weekend sky
+    float3 unitDirection = normalize(WorldRayDirection());
+    float t = 0.5 * (unitDirection.y + 1.0);
+    p.HitColor = (1.0 - t) * float3(1.0, 1.0, 1.0) + t * float3(0.5, 0.7, 1.0);
 }
