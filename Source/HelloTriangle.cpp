@@ -204,7 +204,9 @@ void BoxIntersections::CreateRTPipeline()
 
     // create shaders for the ray tracing pipeline
     auto spv = mShaderCompiler.CompileSPIRVFromFile("Shaders/BasicShader.hlsl");
+    auto chit = mShaderCompiler.CompileSPIRVFromFile("Shaders/Hit.hlsl");
     auto shaderModule = mVRDev->CreateShaderFromSPV(spv);
+    auto chitModule = mVRDev->CreateShaderFromSPV(chit);
 
     vr::PipelineSettings pipelineSettings = {};
     pipelineSettings.PipelineLayout = mPipelineLayout;
@@ -220,7 +222,7 @@ void BoxIntersections::CreateRTPipeline()
     shaderCollection.MissShaders.back().EntryPoint = "miss";
 
     vr::HitGroup hitGroup = {};
-    hitGroup.ClosestHitShader = shaderModule;
+    hitGroup.ClosestHitShader = chitModule;
     hitGroup.ClosestHitShader.EntryPoint = "chit";
     hitGroup.IntersectionShader = shaderModule;
     hitGroup.IntersectionShader.EntryPoint = "isect";

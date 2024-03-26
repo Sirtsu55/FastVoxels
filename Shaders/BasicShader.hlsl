@@ -1,6 +1,7 @@
 #include "Shaders/Ray.hlsl"
 #include "Shaders/Random.hlsl"
 #include "Shaders/Sampling.hlsl"
+#include "Shaders/Structs.hlsl"
 
 struct AABB
 {
@@ -20,12 +21,6 @@ cbuffer uniformBuffer
 [[vk::binding(3, 0)]] StructuredBuffer<AABB> aabbBuffer;
 
 
-
-struct [raypayload] Payload
-{
-    [[vk::location(0)]] float3 HitColor : write(miss, closesthit) : read(caller);
-};
-
 [shader("raygeneration")]
 void rgen()
 {
@@ -43,10 +38,6 @@ void rgen()
     image[int2(LaunchID.xy)] = float4(payload.HitColor, 0.0);
 }
 
-struct BoxHitAttributes
-{
-    float3 Normal;
-};
 
 [shader("intersection")]
 void isect()
@@ -56,34 +47,13 @@ void isect()
     AABB aabb = aabbBuffer[PrimitiveIndex()];
 
     // Calculate the middle point of the AABB
-    float3 middle = 0.5 * (aabb.Min + aabb.Max);
 
-    float3 middleToHit = middle - GetIntersectionPosition();
+    float3 middle = aabb.Min + ((aabb.Min - aabb.Max) / 2.0);
 
-    float dotx = dot(middleToHit, float3(1, 0, 0));
-    float doty = dot(middleToHit, float3(0, 1, 0));
-    float dotz = dot(middleToHit, float3(0, 0, 1));
+    attribs.Normal = dot(middle, ObjectRayDirection());
 
-    if (dotx > doty && dotx > dotz)
-    {
-        attribs.Normal = float3(1, 0, 0) * sign(dotx);
-    }
-    else if (doty > dotx && doty > dotz)
-    {
-        attribs.Normal = float3(0, 1, 0) * sign(doty);
-    }
-    else
-    {
-        attribs.Normal = float3(0, 0, 1) * sign(dotz);
-    }
-    
     ReportHit(RayTCurrent(), 0, attribs);
-}
-
-[shader("closesthit")]
-void chit(inout Payload p, in BoxHitAttributes attribs)
-{
-    p.HitColor = attribs.Normal;
+    
 }
 
 
