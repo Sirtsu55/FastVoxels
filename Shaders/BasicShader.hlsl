@@ -21,11 +21,9 @@ cbuffer uniformBuffer
 
 
 
-struct Payload
+struct [raypayload] Payload
 {
-    [[vk::location(0)]] float3 HitColor;
-
-    [[vk::location(1)]] float3 NextRayDir;
+    [[vk::location(0)]] float3 HitColor : write(miss, closesthit) : read(caller);
 };
 
 [shader("raygeneration")]
@@ -55,6 +53,29 @@ void isect()
 {
     BoxHitAttributes attribs;
 
+    AABB aabb = aabbBuffer[PrimitiveIndex()];
+
+    // Calculate the middle point of the AABB
+    float3 middle = 0.5 * (aabb.Min + aabb.Max);
+
+    float3 middleToHit = middle - GetIntersectionPosition();
+
+    float dotx = dot(middleToHit, float3(1, 0, 0));
+    float doty = dot(middleToHit, float3(0, 1, 0));
+    float dotz = dot(middleToHit, float3(0, 0, 1));
+
+    if (dotx > doty && dotx > dotz)
+    {
+        attribs.Normal = float3(1, 0, 0) * sign(dotx);
+    }
+    else if (doty > dotx && doty > dotz)
+    {
+        attribs.Normal = float3(0, 1, 0) * sign(doty);
+    }
+    else
+    {
+        attribs.Normal = float3(0, 0, 1) * sign(dotz);
+    }
     
     ReportHit(RayTCurrent(), 0, attribs);
 }
@@ -62,15 +83,7 @@ void isect()
 [shader("closesthit")]
 void chit(inout Payload p, in BoxHitAttributes attribs)
 {
-    p.HitColor = float3(1.0f, 1.0f, 1.0f);
-
-    // Reflect the ray around the normal
-    // p.NextRayDir = reflect(WorldRayDirection(), normal);
-
-    // Get the AABB geometry
-    AABB aabb = aabbBuffer[PrimitiveIndex()];
-
-    p.HitColor = aabb.Max - aabb.Min;
+    p.HitColor = attribs.Normal;
 }
 
 
