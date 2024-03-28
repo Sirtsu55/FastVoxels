@@ -32,13 +32,6 @@ target_include_directories(FastVoxels PUBLIC
     )
 
 
-# Add custom command to copy Scenes folder to build directory
-add_custom_command(TARGET FastVoxels POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_directory
-    ${CMAKE_SOURCE_DIR}/Scenes
-    $<TARGET_FILE_DIR:FastVoxels>/Scenes
-)
-
 target_link_libraries(FastVoxels glfw glm Vulray Vulkan::dxc_lib)
 
 target_precompile_headers(FastVoxels PRIVATE "${PROJECT_SOURCE_DIR}/Source/Base/Common.h")

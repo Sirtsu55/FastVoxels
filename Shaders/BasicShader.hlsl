@@ -1,6 +1,6 @@
 #include "Shaders/Common/Common.hlsl"
 
-#define MAX_BOUNCES 5
+#define MAX_BOUNCES 10
 
 [shader("raygeneration")]
 void rgen()
@@ -13,7 +13,7 @@ void rgen()
     Payload payload;
     payload.HitColor = float3(1.0, 1.0, 1.0);
 
-    float3 Radiance = 1.0f;
+    float3 Radiance = 1.0;
 
     for (int i = 0; i < MAX_BOUNCES; i++)
     {
@@ -29,18 +29,20 @@ void rgen()
     Radiance = payload.HitColor * payload.HitLight;
 
     uint frameCount = asuint(otherInfo.y);
+    
+    if (frameCount == 0)
+        accumImage[int2(LaunchID.xy)] = float4(Radiance, 0.0);
+    else
+        accumImage[int2(LaunchID.xy)] += float4(Radiance, 0.0);
+    
 
     float3 Accumulated = accumImage[int2(LaunchID.xy)].xyz;
 
-    float3 FinalColor = (Radiance + Accumulated) / float(1 + frameCount);
+    float3 FinalColor = (Accumulated) / float(1 + frameCount);
 
     outImage[int2(LaunchID.xy)] = float4(FinalColor, 0.0);
 
-    // Reset the accumulation buffer
-	if (frameCount == 0)
-		accumImage[int2(LaunchID.xy)] = float4(Radiance, 0.0);
-	else
-		accumImage[int2(LaunchID.xy)] = float4(Radiance + Accumulated, 0.0);
+
 }
 
 [shader("miss")]

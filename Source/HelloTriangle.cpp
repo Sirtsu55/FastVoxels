@@ -50,7 +50,7 @@ void BoxIntersections::Start()
 
 void BoxIntersections::CreateAS()
 {
-    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.1f, 1.0f);
+    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.05f, 10.0f);
 
     uint64_t sceneSize = 0;
 
@@ -194,7 +194,7 @@ void BoxIntersections::CreateRTPipeline()
     mResourceBindings = {
         vr::DescriptorItem(0, vk::DescriptorType::eAccelerationStructureKHR, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mTLASHandle.Buffer.DevAddress),
         vr::DescriptorItem(1, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR, 1, &mUniformBuffer),
-        vr::DescriptorItem(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR, 1, &mAABBBuffer),
+        vr::DescriptorItem(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eIntersectionKHR, 1, &mAABBBuffer),
         vr::DescriptorItem(3, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mOutputImage),
         vr::DescriptorItem(4, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mAccumImage)
     };

@@ -13,6 +13,7 @@ void isect()
     float3 hitLoc;
 
     float RayT = -1.0;
+    
 
     // Calculate the middle point of the AABB
     {
@@ -25,17 +26,16 @@ void isect()
 
         float3 t0 = (p0 - rayOrigin) * invRaydir;
         float3 t1 = (p1 - rayOrigin) * invRaydir;
-        float3 tmin = min(t0,t1), tmax = max(t0,t1);
+        float3 tmin = min(t0, t1), tmax = max(t0, t1);
     
-        float mn =  max(max(tmin.x, tmin.y), tmin.z);
+        float mn = max(max(tmin.x, tmin.y), tmin.z);
         float mx = min(min(tmax.x, tmax.y), tmax.z);
 
-        if (mn > mx)
-        {
+        if (mn <= mx)
+            RayT = mn;
+        else
             return;
-        }
-
-        RayT = mn;
+        
 
         hitLoc = rayOrigin + rayDir * RayT;
     }
@@ -48,20 +48,22 @@ void isect()
         float absY = abs(midToHit.y);
         float absZ = abs(midToHit.z);
 
-            if (absX > absY && absX > absZ)
-            {
-                attribs.Normal.x = sign(midToHit.x);
-            }
-            else if (absY > absX && absY > absZ)
-            {
-                attribs.Normal.y = sign(midToHit.y);
-            }
-            else if (absZ > absX && absZ > absY)
-            {
-                attribs.Normal.z = sign(midToHit.z);
-            }
+        if (absX > absY && absX > absZ)
+        {
+            attribs.Normal.x = sign(midToHit.x);
+        }
+        else if (absY > absX && absY > absZ)
+        {
+            attribs.Normal.y = sign(midToHit.y);
+        }
+        else if (absZ > absX && absZ > absY)
+        {
+            attribs.Normal.z = sign(midToHit.z);
+        }
     }
-
+    
+    
     ReportHit(RayT, 0, attribs);
+
     
 }

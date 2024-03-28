@@ -57,7 +57,7 @@ Application::Application()
     mSurface = surface;
 
     // Pick the physical device to use
-    builder.PhysicalDeviceFeatures10.samplerAnisotropy = true;
+    builder.PhysicalDeviceFeatures12.scalarBlockLayout = true;
     mPhysicalDevice = builder.PickPhysicalDevice(mSurface);
 
     // Create the logical device
@@ -177,6 +177,8 @@ void Application::Present(vk::CommandBuffer commandBuffer)
     // the results can be vk::Result::eSuccess, vk::Result::eSuboptimalKHR or vk::Result::eErrorOutOfDateKHR
     auto result = mQueues.PresentQueue.presentKHR(&presentInfo);
 
+    mQueues.GraphicsQueue.waitIdle();
+
     if (result == vk::Result::eErrorOutOfDateKHR)
     {
         HandleResize();
@@ -247,7 +249,7 @@ void Application::UpdateCamera()
     {
         if (delta.x || delta.y)
         {
-            mCamera.Rotate(delta.y * DeltaTime, delta.x * DeltaTime, 0);
+            mCamera.Rotate(delta.y * DeltaTime * MouseSensitivity, delta.x * DeltaTime * MouseSensitivity, 0);
             mPassiveFrameCount = 0;
         }
     }
@@ -263,22 +265,22 @@ void Application::UpdateCamera()
     }
     if (glfwGetKey(mWindow, GLFW_KEY_W) == GLFW_PRESS)
     {
-        mCamera.MoveForward(DeltaTime);
+        mCamera.MoveForward(DeltaTime * MovementSpeed);
         mPassiveFrameCount = 0;
     }
     if (glfwGetKey(mWindow, GLFW_KEY_S) == GLFW_PRESS)
     {
-        mCamera.MoveForward(-DeltaTime);
+        mCamera.MoveForward(-DeltaTime * MovementSpeed);
         mPassiveFrameCount = 0;
     }
     if (glfwGetKey(mWindow, GLFW_KEY_D) == GLFW_PRESS)
     {
-        mCamera.MoveRight(DeltaTime);
+        mCamera.MoveRight(DeltaTime * MovementSpeed);
         mPassiveFrameCount = 0;
     }
     if (glfwGetKey(mWindow, GLFW_KEY_A) == GLFW_PRESS)
     {
-        mCamera.MoveRight(-DeltaTime);
+        mCamera.MoveRight(-DeltaTime * MovementSpeed);
         mPassiveFrameCount = 0;
     }
 

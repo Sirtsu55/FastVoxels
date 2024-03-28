@@ -58,11 +58,11 @@ protected:
 	
 	uint32_t mMaxFramesInFlight = 0;
 
-	uint32_t mWindowWidth = 1280;
-	uint32_t mWindowHeight = 720;
+	uint32_t mWindowWidth = 1980;
+	uint32_t mWindowHeight = 1080;
 
-	uint32_t mRenderWidth = 1280;
-	uint32_t mRenderHeight = 720;
+	uint32_t mRenderWidth = 1980;
+	uint32_t mRenderHeight = 1080;
 
 	uint32_t mCurrentSwapchainImage = 0;
 
@@ -82,6 +82,9 @@ protected:
 
 	glm::dvec2 mMousePos = { 0.0f, 0.0f };
 	glm::dvec2 mMouseDelta = { 0.0f, 0.0f };
+
+	float MouseSensitivity = 2.0f;
+	float MovementSpeed = 0.05f;
 
 	float DeltaTime = 0.0f;
 
