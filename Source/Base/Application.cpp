@@ -198,7 +198,7 @@ void Application::CreateBaseResources()
     // Create an image to render to
     auto imageCreateInfo = vk::ImageCreateInfo()
                                .setImageType(vk::ImageType::e2D)
-                               .setFormat(vk::Format::eR16G16B16A16Sfloat)
+                               .setFormat(vk::Format::eR32G32B32A32Sfloat)
                                .setExtent(vk::Extent3D(mSwapchainResources.SwapchainExtent, 1))
                                .setMipLevels(1)
                                .setArrayLayers(1)
@@ -210,15 +210,18 @@ void Application::CreateBaseResources()
 
     // create the image with dedicated memory
     mOutputImageBuffer = mVRDev->CreateImage(imageCreateInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
+    mAccumImageBuffer = mVRDev->CreateImage(imageCreateInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
 
     // create a view for the image
     auto viewCreateInfo = vk::ImageViewCreateInfo()
                               .setImage(mOutputImageBuffer.Image)
                               .setViewType(vk::ImageViewType::e2D)
-                              .setFormat(vk::Format::eR16G16B16A16Sfloat)
+                              .setFormat(vk::Format::eR32G32B32A32Sfloat)
                               .setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
 
     mOutputImage.View = mDevice.createImageView(viewCreateInfo);
+    viewCreateInfo.setImage(mAccumImageBuffer.Image);
+    mAccumImage.View = mDevice.createImageView(viewCreateInfo);
 
     // create a uniform buffer
     uint32_t uniformBufferSize = sizeof(float) * 4 * 4 * 2; // two 4x4 matrix
@@ -373,6 +376,8 @@ Application::~Application()
         mVRDev->DestroyBuffer(mUniformBuffer);
     if (mOutputImageBuffer.Image)
         mVRDev->DestroyImage(mOutputImageBuffer);
+    if (mAccumImageBuffer.Image)
+        mVRDev->DestroyImage(mAccumImageBuffer);
 
     // Clean up
     delete mVRDev;
@@ -381,6 +386,7 @@ Application::~Application()
     glfwTerminate();
 
     mDevice.destroyImageView(mOutputImage.View);
+    mDevice.destroyImageView(mAccumImage.View);
 
     mDevice.destroyFence(mRenderFence);
     mDevice.destroySemaphore(mRenderSemaphore);

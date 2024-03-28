@@ -148,7 +148,7 @@ void BoxIntersections::CreateAS()
 		// set the transform matrix to identity
         inst.transform = {
 			1.0f, 0.0f, 0.0f, 0.0f,
-			0.0f, 1.0f, 0.0f, 0.0f,
+			0.0f, 1.0f, 0.0f, 1.0f,
 			0.0f, 0.0f, 1.0f, 0.0f};
 
 		mVRDev->UpdateBuffer(InstanceBuffer, &inst, sizeof(vk::AccelerationStructureInstanceKHR), offset);
@@ -194,8 +194,9 @@ void BoxIntersections::CreateRTPipeline()
     mResourceBindings = {
         vr::DescriptorItem(0, vk::DescriptorType::eAccelerationStructureKHR, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mTLASHandle.Buffer.DevAddress),
         vr::DescriptorItem(1, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR, 1, &mUniformBuffer),
-        vr::DescriptorItem(2, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mOutputImage),
-        vr::DescriptorItem(3, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR, 1, &mAABBBuffer),
+        vr::DescriptorItem(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR, 1, &mAABBBuffer),
+        vr::DescriptorItem(3, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mOutputImage),
+        vr::DescriptorItem(4, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mAccumImage)
     };
 
     mResourceDescriptorLayout = mVRDev->CreateDescriptorSetLayout(mResourceBindings);
@@ -205,8 +206,11 @@ void BoxIntersections::CreateRTPipeline()
     // create shaders for the ray tracing pipeline
     auto spv = mShaderCompiler.CompileSPIRVFromFile("Shaders/BasicShader.hlsl");
     auto chit = mShaderCompiler.CompileSPIRVFromFile("Shaders/Hit.hlsl");
+    auto isect = mShaderCompiler.CompileSPIRVFromFile("Shaders/Intersection.hlsl");
+
     auto shaderModule = mVRDev->CreateShaderFromSPV(spv);
     auto chitModule = mVRDev->CreateShaderFromSPV(chit);
+    auto isectModule = mVRDev->CreateShaderFromSPV(isect);
 
     vr::PipelineSettings pipelineSettings = {};
     pipelineSettings.PipelineLayout = mPipelineLayout;
@@ -224,7 +228,7 @@ void BoxIntersections::CreateRTPipeline()
     vr::HitGroup hitGroup = {};
     hitGroup.ClosestHitShader = chitModule;
     hitGroup.ClosestHitShader.EntryPoint = "chit";
-    hitGroup.IntersectionShader = shaderModule;
+    hitGroup.IntersectionShader = isectModule;
     hitGroup.IntersectionShader.EntryPoint = "isect";
     shaderCollection.HitGroups.push_back(hitGroup);
 
@@ -237,6 +241,8 @@ void BoxIntersections::CreateRTPipeline()
     mResourceDescBuffer = mVRDev->CreateDescriptorBuffer(mResourceDescriptorLayout, mResourceBindings, vr::DescriptorBufferType::Resource);
 
     mDevice.destroyShaderModule(shaderModule.Module);
+    mDevice.destroyShaderModule(chitModule.Module);
+    mDevice.destroyShaderModule(isectModule.Module);
 }
 
 void BoxIntersections::UpdateDescriptorSet()

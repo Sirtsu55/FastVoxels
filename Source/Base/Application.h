@@ -49,6 +49,9 @@ protected:
 	vr::AllocatedImage mOutputImageBuffer;
     vr::AccessibleImage mOutputImage;
 
+	vr::AllocatedImage mAccumImageBuffer;
+    vr::AccessibleImage mAccumImage;
+
 	vr::SwapchainBuilder mSwapchainBuilder;
 	vr::SwapchainResources mSwapchainResources;
 	vk::SwapchainKHR mOldSwapchain = nullptr;

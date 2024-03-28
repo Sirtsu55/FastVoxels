@@ -51,13 +51,18 @@ std::vector<uint32_t> ShaderCompiler::CompileSPIRVFromSource(const std::vector<c
     if (pErrors && pErrors->GetStringLength() > 0)
     {
         VULRAY_FLOG_ERROR("DXC Error: %s", pErrors->GetStringPointer());
-        return {};
     }
 
     CComPtr<IDxcBlob> pSpirv;
     pCompileResult->GetResult(&pSpirv);
 
     uint32_t spirvSize = pSpirv->GetBufferSize() / sizeof(uint32_t); // always a multiple of 4
+
+    if (spirvSize == 0)
+    {
+        VULRAY_LOG_ERROR("Failed to compile shader");
+        return {};
+    }
 
     return std::vector<uint32_t>((uint32_t*)pSpirv->GetBufferPointer(), (uint32_t*)pSpirv->GetBufferPointer() + spirvSize);
 }

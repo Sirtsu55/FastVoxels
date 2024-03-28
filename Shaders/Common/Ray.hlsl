@@ -8,13 +8,13 @@ RayDesc ConstructRay(in float4x4 vInv, in float4x4 pInv)
 
     RayDesc rayDesc;
 	rayDesc.Origin = mul(vInv, float4(0,0,0,1)).xyz;
-	rayDesc.Direction = mul(vInv, float4(normalize(target.xyz), 0)).xyz;
+	rayDesc.Direction = normalize(mul(vInv, float4(normalize(target.xyz), 0)).xyz);
 	rayDesc.TMin = 0.001;
 	rayDesc.TMax = 10000.0;
     return rayDesc;
 }
 
-float3 GetIntersectionPosition()
+float3 GetWorldIntersection()
 {
 	return WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
 }
