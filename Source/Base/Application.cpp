@@ -58,6 +58,7 @@ Application::Application()
 
     // Pick the physical device to use
     builder.PhysicalDeviceFeatures12.scalarBlockLayout = true;
+    builder.PhysicalDeviceFeatures12.hostQueryReset = true;
     mPhysicalDevice = builder.PickPhysicalDevice(mSurface);
 
     // Create the logical device
@@ -123,9 +124,6 @@ void Application::Stop()
 void Application::BeginFrame()
 {
 
-    mPassiveFrameCount++;
-    mFrameCount++;
-
     DeltaTime = mFrameTimer.Endd();
     mFrameTimer.Start();
     // Acquire the next image
@@ -140,6 +138,11 @@ void Application::BeginFrame()
 
 void Application::WaitForRendering()
 {
+
+}
+
+void Application::Present(vk::CommandBuffer commandBuffer)
+{
     // Wait for the fence to be signaled by the GPU
     auto _ = mDevice.waitForFences(mRenderFence, true, 1000000000);
     // Reset the fence
@@ -148,10 +151,6 @@ void Application::WaitForRendering()
     // reset the command buffer
     uint32_t lastCmdIdx = mRTRenderCmdIndex == 0 ? 1 : 0;
     mRTRenderCmd[lastCmdIdx].reset(vk::CommandBufferResetFlagBits::eReleaseResources);
-}
-
-void Application::Present(vk::CommandBuffer commandBuffer)
-{
 
     vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
 
@@ -164,7 +163,7 @@ void Application::Present(vk::CommandBuffer commandBuffer)
                            .setSignalSemaphoreCount(1)
                            .setPSignalSemaphores(&mPresentSemaphore);
 
-    auto _ = mQueues.GraphicsQueue.submit(1, &qSubmitInfo, mRenderFence);
+    _ = mQueues.GraphicsQueue.submit(1, &qSubmitInfo, mRenderFence);
 
     auto presentInfo = vk::PresentInfoKHR()
                            .setWaitSemaphoreCount(1)
@@ -193,6 +192,9 @@ void Application::Present(vk::CommandBuffer commandBuffer)
     }
     // new image index
     mRTRenderCmdIndex = mRTRenderCmdIndex == 0 ? 1 : 0;
+
+    mPassiveFrameCount++;
+    mFrameCount++;
 }
 
 void Application::CreateBaseResources()

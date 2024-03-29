@@ -75,7 +75,6 @@ protected:
     std::vector<vk::CommandBuffer> mRTRenderCmd; // one recording and one pending
     uint32_t mRTRenderCmdIndex = 0;
 
-
 	vr::AllocatedBuffer mUniformBuffer = {};
 
 	Camera mCamera;

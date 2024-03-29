@@ -5,6 +5,12 @@
 #include "Base/FileRead.h"
 #include "Base/MeshLoader.h"
 
+struct PerformanceData
+{
+    double ApplicationTime;
+	double PerformanceTime;
+};
+
 class BoxIntersections : public Application
 {
 public:
@@ -16,6 +22,7 @@ public:
     void CreateAS();
     void CreateRTPipeline();
     void UpdateDescriptorSet();
+    void CreateQueryPool();
 
 public:
     ShaderCompiler mShaderCompiler;
@@ -35,10 +42,19 @@ public:
 
     std::vector<vr::BLASHandle> mBLASHandles;
     vr::TLASHandle mTLASHandle;
+
+    vk::QueryPool mPerfTimePool = nullptr;
+    double mTimestampPeriodToMs = 0.0;
+
+
+    std::vector<PerformanceData> mPerformanceData;
 };
+
 
 void BoxIntersections::Start()
 {
+    CreateQueryPool();
+
     CreateBaseResources();
 
     CreateRTPipeline();
@@ -48,9 +64,40 @@ void BoxIntersections::Start()
     UpdateDescriptorSet();
 }
 
+void BoxIntersections::CreateQueryPool()
+{
+
+    vk::PhysicalDeviceLimits const& device_limits = mPhysicalDevice.getProperties().limits;
+
+    if (device_limits.timestampPeriod == 0)
+    {
+        throw std::runtime_error{ "The selected device does not support timestamp queries!" };
+    }
+
+    if (!device_limits.timestampComputeAndGraphics)
+    {
+        // Check if the graphics queue used in this sample supports time stamps
+        vk::QueueFamilyProperties const& graphics_queue_family_properties = mPhysicalDevice.getQueueFamilyProperties()[mQueues.GraphicsIndex];
+        if (graphics_queue_family_properties.timestampValidBits == 0)
+        {
+            throw std::runtime_error{ "The selected graphics queue family does not support timestamp queries!" };
+        }
+    }
+
+    mPerfTimePool = mDevice.createQueryPool(vk::QueryPoolCreateInfo({}, vk::QueryType::eTimestamp, 2));
+
+    mTimestampPeriodToMs = device_limits.timestampPeriod / 1000000.0;
+
+    // Write the header to the file
+    std::ofstream file("PerformanceData.csv");
+    file << "Application Time (s),Performance Time (ms)" << std::endl;
+
+    mPerformanceData.reserve(100);
+}
+
 void BoxIntersections::CreateAS()
 {
-    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.05f, 10.0f);
+    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.05f, 0.01f);
 
     uint64_t sceneSize = 0;
 
@@ -254,7 +301,11 @@ void BoxIntersections::UpdateDescriptorSet()
 
 void BoxIntersections::Update(vk::CommandBuffer renderCmd)
 {
+    UpdateCamera();
+
     renderCmd.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
+
+    renderCmd.resetQueryPool(mPerfTimePool, 0, 2);
 
     mVRDev->BindDescriptorBuffer({mResourceDescBuffer}, renderCmd);
     mVRDev->BindDescriptorSet(mPipelineLayout, 0, 0, 0, renderCmd);
@@ -266,7 +317,11 @@ void BoxIntersections::Update(vk::CommandBuffer renderCmd)
         vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1),
         renderCmd);
 
+    renderCmd.writeTimestamp(vk::PipelineStageFlagBits::eRayTracingShaderKHR, mPerfTimePool, 0);
+
     mVRDev->DispatchRays(mRTPipeline, mSBTBuffer, mRenderWidth, mRenderHeight, 1, renderCmd);
+
+    renderCmd.writeTimestamp(vk::PipelineStageFlagBits::eRayTracingShaderKHR, mPerfTimePool, 1);
 
     // Helper function in Application Class to blit the image to the swapchain image
     BlitImage(renderCmd);
@@ -277,7 +332,26 @@ void BoxIntersections::Update(vk::CommandBuffer renderCmd)
 
     Present(renderCmd);
 
-    UpdateCamera();
+    // Get the timestamps
+    uint64_t timestamps[2] = {};
+    auto _ = mDevice.getQueryPoolResults(mPerfTimePool, 0, 2, sizeof(uint64_t) * 2, timestamps, sizeof(uint64_t), vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait);
+
+    uint64_t time = timestamps[1] - timestamps[0];
+
+    mPerformanceData.push_back({glfwGetTime(), time * mTimestampPeriodToMs});
+
+    if (mPerformanceData.size() > 100)
+    {
+        // Write the performance data to a file incrementally
+        std::ofstream file("PerformanceData.csv", std::ios::app);
+
+        for (auto& data : mPerformanceData)
+        {
+			file << data.ApplicationTime << "," << data.PerformanceTime << std::endl;
+		}
+        mPerformanceData.clear();
+	}
+
 }
 
 void BoxIntersections::Stop()
@@ -299,6 +373,8 @@ void BoxIntersections::Stop()
     {
 		mVRDev->DestroyBLAS(blasHandle);
 	}
+
+    mDevice.destroyQueryPool(mPerfTimePool);
 
     mVRDev->DestroyTLAS(mTLASHandle);
 }
