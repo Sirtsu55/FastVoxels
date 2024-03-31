@@ -262,7 +262,7 @@ void BoxIntersections::CreateRTPipeline()
     vr::PipelineSettings pipelineSettings = {};
     pipelineSettings.PipelineLayout = mPipelineLayout;
     pipelineSettings.MaxRecursionDepth = 1;
-    pipelineSettings.MaxPayloadSize = sizeof(glm::vec3);
+    pipelineSettings.MaxPayloadSize = sizeof(float) * 2 + sizeof(glm::vec3) * 3;
     pipelineSettings.MaxHitAttributeSize = sizeof(glm::vec3);
 
     vr::RayTracingShaderCollection shaderCollection = {};
@@ -347,8 +347,9 @@ void BoxIntersections::Update(vk::CommandBuffer renderCmd)
 
         for (auto& data : mPerformanceData)
         {
-			file << data.ApplicationTime << "," << data.PerformanceTime << std::endl;
+			file << data.ApplicationTime << "," << data.PerformanceTime << "\n";
 		}
+
         mPerformanceData.clear();
 	}
 
@@ -377,6 +378,16 @@ void BoxIntersections::Stop()
     mDevice.destroyQueryPool(mPerfTimePool);
 
     mVRDev->DestroyTLAS(mTLASHandle);
+
+    // Write the remaining performance data to the file
+    std::ofstream file("PerformanceData.csv", std::ios::app);
+
+    for (auto& data : mPerformanceData)
+    {
+        file << data.ApplicationTime << "," << data.PerformanceTime << "\n";
+    }
+
+    mPerformanceData.clear();
 }
 
 int main()

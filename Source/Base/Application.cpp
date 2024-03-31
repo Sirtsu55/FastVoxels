@@ -12,6 +12,10 @@ Application::Application()
     }
 
     glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // Sets the client API to GLFW_NO_API, which means that the application will not create an OpenGL context
+    
+    // Need to enable this so the performance data is consistent across different runs and PCs 
+    // so that the user cannot cheat by running this on lower resolution
+    // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
 
     mWindow = glfwCreateWindow(mWindowWidth, mWindowHeight, "FastVoxels", nullptr, nullptr); // Creates a window
 
@@ -190,11 +194,16 @@ void Application::Present(vk::CommandBuffer commandBuffer)
     {
         throw std::runtime_error("Unknown result when presenting swapchain: " + vk::to_string(result));
     }
+    else
+    {
+        mPassiveFrameCount++;
+        mFrameCount++;
+    }
+
     // new image index
     mRTRenderCmdIndex = mRTRenderCmdIndex == 0 ? 1 : 0;
 
-    mPassiveFrameCount++;
-    mFrameCount++;
+
 }
 
 void Application::CreateBaseResources()
@@ -320,8 +329,6 @@ void Application::HandleResize()
     glfwGetFramebufferSize(mWindow, &width, &height);
     mWindowWidth = width;
     mWindowHeight = height;
-    mRenderWidth = mWindowWidth > mOutputImageBuffer.Width ? mOutputImageBuffer.Width : mWindowWidth;
-    mRenderHeight = mWindowHeight > mOutputImageBuffer.Height ? mOutputImageBuffer.Height : mWindowHeight;
 
     // update the camera aspect ratio
     mCamera.AspectRatio = (float)mRenderWidth / (float)mRenderHeight;

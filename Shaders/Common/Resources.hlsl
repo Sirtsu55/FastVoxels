@@ -12,11 +12,11 @@ struct BoxHitAttributes
 
 struct [raypayload] Payload
 {
-    [[vk::location(0)]] float3 HitColor : write(closesthit, miss, caller) : read(caller);
-    [[vk::location(1)]] float HitLight : write(closesthit, miss) : read(caller);
-    [[vk::location(3)]] float3 NextOrigin : write(closesthit) : read(caller);
-    [[vk::location(4)]] float3 NextDir : write(closesthit) : read(caller);
-    [[vk::location(5)]] bool TerminateRay : write(closesthit, miss) : read(caller);
+    [[vk::location(0)]] float3 HitColor;
+    [[vk::location(1)]] float HitLight;
+    [[vk::location(3)]] float3 NextOrigin;
+    [[vk::location(4)]] float3 NextDir;
+    [[vk::location(5)]] bool TerminateRay;
 
 };
 

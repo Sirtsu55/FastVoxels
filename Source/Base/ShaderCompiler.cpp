@@ -23,7 +23,7 @@ std::vector<uint32_t> ShaderCompiler::CompileSPIRVFromSource(const std::vector<c
     std::vector<const wchar_t*> arguments;
 
     arguments.push_back(L"-T");
-    arguments.push_back(L"lib_6_7");
+    arguments.push_back(L"lib_6_6");
 
     arguments.push_back(L"-E");
     arguments.push_back(L"main");

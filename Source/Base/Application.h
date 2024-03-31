@@ -61,8 +61,8 @@ protected:
 	uint32_t mWindowWidth = 1980;
 	uint32_t mWindowHeight = 1080;
 
-	uint32_t mRenderWidth = 1980;
-	uint32_t mRenderHeight = 1080;
+	const uint32_t mRenderWidth = 1980;
+	const uint32_t mRenderHeight = 1080;
 
 	uint32_t mCurrentSwapchainImage = 0;
 
