@@ -297,7 +297,7 @@ void Application::UpdateCamera()
 
     glm::mat4 view = mCamera.GetViewMatrix();
 
-    mCamera.AspectRatio = (float)mSwapchainResources.SwapchainExtent.width / (float)mSwapchainResources.SwapchainExtent.height;
+    mCamera.AspectRatio = ((float)mRenderWidth) / ((float)mRenderHeight);
     glm::mat4 proj = mCamera.GetProjectionMatrix();
 
     // update the view matrix
@@ -354,10 +354,10 @@ void Application::BlitImage(vk::CommandBuffer renderCmd)
         mOutputImageBuffer.Image, vk::ImageLayout::eTransferSrcOptimal,
         mSwapchainResources.SwapchainImages[mCurrentSwapchainImage], vk::ImageLayout::eTransferDstOptimal,
         vk::ImageBlit(vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
-                      {vk::Offset3D(0, 0, 0), vk::Offset3D(mRenderWidth, mRenderHeight, 1)},
+                      {vk::Offset3D(0, 0, 0), vk::Offset3D(mOutputImageBuffer.Width, mOutputImageBuffer.Height, 1)},
                       vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
-                      {vk::Offset3D(0, 0, 0), vk::Offset3D(mWindowWidth, mWindowHeight, 1)}),
-        vk::Filter::eNearest);
+                      {vk::Offset3D(0, 0, 0), vk::Offset3D(mSwapchainResources.SwapchainExtent.width, mSwapchainResources.SwapchainExtent.height, 1)}),
+        vk::Filter::eLinear);
 
     mVRDev->TransitionImageLayout(mOutputImageBuffer.Image,
                                   vk::ImageLayout::eTransferSrcOptimal,
