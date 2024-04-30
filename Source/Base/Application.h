@@ -83,7 +83,7 @@ protected:
 	glm::dvec2 mMouseDelta = { 0.0f, 0.0f };
 
 	float MouseSensitivity = 2.0f;
-	float MovementSpeed = 0.05f;
+	float MovementSpeed = 1.0f;
 
 	float DeltaTime = 0.0f;
 

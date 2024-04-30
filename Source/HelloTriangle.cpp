@@ -5,6 +5,10 @@
 #include "Base/FileRead.h"
 #include "Base/MeshLoader.h"
 
+#define OGT_VOX_IMPLEMENTATION
+#include "Base/ogt_vox.h"
+
+
 struct PerformanceData
 {
     double ApplicationTime;
@@ -46,6 +50,7 @@ public:
     vk::QueryPool mPerfTimePool = nullptr;
     double mTimestampPeriodToMs = 0.0;
 
+    std::ofstream mPerformanceFile;
 
     std::vector<PerformanceData> mPerformanceData;
 };
@@ -89,21 +94,56 @@ void BoxIntersections::CreateQueryPool()
     mTimestampPeriodToMs = device_limits.timestampPeriod / 1000000.0;
 
     // Write the header to the file
-    std::ofstream file("PerformanceData.csv");
-    file << "Application Time (s),Performance Time (ms)" << std::endl;
+    mPerformanceFile.open("PerformanceData.csv", std::ios::out);
+    mPerformanceFile << "Application Time (s),Performance Time (ms)" << std::endl;
 
     mPerformanceData.reserve(100);
 }
 
 void BoxIntersections::CreateAS()
 {
-    auto scene = mMeshLoader.LoadVoxelizedGLBScene("Assets/monkey.glb", 0.05f, 0.01f);
+    std::vector<uint8_t> rawVox;
+    FileRead("Assets/cars.vox", rawVox);
+    auto voxScene = ogt_vox_read_scene(rawVox.data(), rawVox.size());
+
+    std::vector<glm::vec3> positions = {};
+
+    for (uint32_t i = 0; i < voxScene->num_instances; i++)
+    {
+        auto& instance = voxScene->instances[i];
+        auto& model = voxScene->models[instance.model_index];
+        
+        glm::mat4 transform = glm::make_mat4(&instance.transform.m00);
+
+        uint32_t sizeX = model->size_x;
+        uint32_t sizeY = model->size_y;
+        uint32_t sizeZ = model->size_z;
+
+
+        // Iterate over the voxels in the model
+        for (uint32_t x = 0; x < sizeX; x++)
+        {
+            for (uint32_t y = 0; y < sizeY; y++)
+            {
+                for (uint32_t z = 0; z < sizeZ; z++)
+                {
+                    if (model->voxel_data[x + y * sizeX + z * sizeX * sizeY] != 0)
+                    {
+						auto pos = transform * glm::vec4(x, y, z, 1.0f);
+
+                        positions.push_back(glm::vec3(pos));
+					}
+				}
+			}
+		}
+
+    }
 
     uint64_t sceneSize = 0;
 
     for (auto& geom : scene.Geometries)
     {
-		sceneSize += geom.Positions.size() * sizeof(vk::AabbPositionsKHR);
+		sceneSize += positions.size() * sizeof(vk::AabbPositionsKHR);
 	}
 
     mAABBBuffer = mVRDev->CreateBuffer(
@@ -119,36 +159,28 @@ void BoxIntersections::CreateAS()
     std::vector<vk::AabbPositionsKHR> aabbs = {};
     aabbs.reserve(sceneSize / sizeof(vk::AabbPositionsKHR));
 
-    for (auto& mesh : scene.Meshes)
+    auto& blasInfo = blasCreateInfos.emplace_back();
+
+    auto& geomData = blasInfo.Geometries.emplace_back();
+    geomData.Type = vk::GeometryTypeKHR::eAabbs;
+    geomData.PrimitiveCount = positions.size();
+    geomData.Stride = sizeof(vk::AabbPositionsKHR);
+    geomData.DataAddresses.AABBDevAddress = mAABBBuffer.DevAddress;
+
+    for (auto& pos : positions)
     {
-        auto& blasInfo = blasCreateInfos.emplace_back();
+        const float voxSide = 0.5;
 
-        for (auto& geomRef : mesh.GeometryReferences)
-        {
-            auto& geomData = blasInfo.Geometries.emplace_back();
-			auto& geom = scene.Geometries[geomRef];
+		auto aabb = vk::AabbPositionsKHR();
+		aabb.minX = pos.x - voxSide;
+		aabb.minY = pos.y - voxSide;
+		aabb.minZ = pos.z - voxSide;
+		aabb.maxX = pos.x + voxSide;
+		aabb.maxY = pos.y + voxSide;
+		aabb.maxZ = pos.z + voxSide;
 
-            geomData.Type = vk::GeometryTypeKHR::eAabbs;
-            geomData.PrimitiveCount = geom.Positions.size();
-            geomData.Stride = sizeof(vk::AabbPositionsKHR);
-            geomData.DataAddresses.AABBDevAddress = mAABBBuffer.DevAddress + offset;
-
-            for (auto& pos : geom.Positions)
-            {
-                const float voxSide = scene.VoxelSize / 2.0f;
-
-				auto aabb = vk::AabbPositionsKHR();
-                aabb.minX = pos.x - voxSide;
-                aabb.minY = pos.y - voxSide;
-                aabb.minZ = pos.z - voxSide;
-                aabb.maxX = pos.x + voxSide;
-                aabb.maxY = pos.y + voxSide;
-                aabb.maxZ = pos.z + voxSide;
-
-                aabbs.push_back(aabb);
-            }
-		}
-    }
+		aabbs.push_back(aabb);
+	}
 
     std::vector<vr::BLASBuildInfo> buildInfos = {};
 
@@ -340,14 +372,13 @@ void BoxIntersections::Update(vk::CommandBuffer renderCmd)
 
     mPerformanceData.push_back({glfwGetTime(), time * mTimestampPeriodToMs});
 
+    VULRAY_FLOG_INFO("Performance Time: %f", time * mTimestampPeriodToMs);
+
     if (mPerformanceData.size() > 100)
     {
-        // Write the performance data to a file incrementally
-        std::ofstream file("PerformanceData.csv", std::ios::app);
-
         for (auto& data : mPerformanceData)
         {
-			file << data.ApplicationTime << "," << data.PerformanceTime << "\n";
+            mPerformanceFile << data.ApplicationTime << "," << data.PerformanceTime << "\n";
 		}
 
         mPerformanceData.clear();
@@ -379,12 +410,9 @@ void BoxIntersections::Stop()
 
     mVRDev->DestroyTLAS(mTLASHandle);
 
-    // Write the remaining performance data to the file
-    std::ofstream file("PerformanceData.csv", std::ios::app);
-
     for (auto& data : mPerformanceData)
     {
-        file << data.ApplicationTime << "," << data.PerformanceTime << "\n";
+        mPerformanceFile << data.ApplicationTime << "," << data.PerformanceTime << "\n";
     }
 
     mPerformanceData.clear();

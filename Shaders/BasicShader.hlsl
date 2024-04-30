@@ -27,22 +27,25 @@ void rgen()
     }
 
     Radiance = payload.HitColor * payload.HitLight;
-
+    if (any(isnan(Radiance)))
+        Radiance = float3(0.0, 0.0, 0.0);
+    
     uint frameCount = asuint(otherInfo.y);
     
-    if (frameCount == 0)
-        accumImage[int2(LaunchID.xy)] = float4(Radiance, 0.0);
-    else
-        accumImage[int2(LaunchID.xy)] += float4(Radiance, 0.0);
+    float3 Accumulated = 0;
     
-
-    float3 Accumulated = accumImage[int2(LaunchID.xy)].xyz;
+    if (frameCount == 0)
+        Accumulated = Radiance;
+    else
+        Accumulated = accumImage[int2(LaunchID.xy)].xyz + Radiance;
+    
+    accumImage[int2(LaunchID.xy)] = float4(Accumulated, 0.0);
 
     float3 FinalColor = (Accumulated) / float(1 + frameCount);
-
+    
+    FinalColor = clamp(FinalColor, 0.0, 1.0);
+    
     outImage[int2(LaunchID.xy)] = float4(FinalColor, 0.0);
-
-
 }
 
 [shader("miss")]
