@@ -1,5 +1,7 @@
 #include "Shaders/Common/Common.hlsl"
 
+#define EPSILON 0.01
+
 [shader("intersection")]
 void isect()
 {
@@ -9,6 +11,7 @@ void isect()
     AABB aabb = aabbBuffer[PrimitiveIndex()];
 
     float3 middle = aabb.Min + ((aabb.Max - aabb.Min) / 2.0);
+    float3 invMid = 1.0 / middle;
 
     float3 hitLoc;
 
@@ -33,33 +36,20 @@ void isect()
 
         if (mn <= mx)
             RayT = mn;
-        else
-            return;
         
-
         hitLoc = rayOrigin + rayDir * RayT;
     }
 
-    // Calculate the normal
+    if (RayT > 0.0)
     {
-        float3 midToHit = hitLoc - middle;
-
-        float absX = abs(midToHit.x);
-        float absY = abs(midToHit.y);
-        float absZ = abs(midToHit.z);
-
-        if (absX > absY && absX > absZ)
-        {
-            attribs.Normal.x = sign(midToHit.x);
-        }
-        else if (absY > absX && absY > absZ)
-        {
-            attribs.Normal.y = sign(midToHit.y);
-        }
-        else if (absZ > absX && absZ > absY)
-        {
-            attribs.Normal.z = sign(midToHit.z);
-        }
+        const float3 center = 0.5 * (aabb.Min + aabb.Max);
+        const float3 centerToPoint = hitLoc - center;
+        const float3 halfSize = 0.5 * (aabb.Max - aabb.Min);
+        attribs.Normal = normalize(sign(centerToPoint) * step(-EPSILON, abs(centerToPoint) - halfSize));
+    }
+    else
+    {
+        attribs.Normal = 1;
     }
     
     

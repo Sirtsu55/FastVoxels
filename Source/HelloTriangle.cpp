@@ -34,6 +34,7 @@ public:
     MeshLoader mMeshLoader;
 
     vr::AllocatedBuffer mAABBBuffer;
+    vr::AllocatedBuffer mTransformBuffer;
 
     vr::SBTBuffer mSBTBuffer;
 
@@ -103,22 +104,22 @@ void BoxIntersections::CreateQueryPool()
 void BoxIntersections::CreateAS()
 {
     std::vector<uint8_t> rawVox;
-    FileRead("Assets/cars.vox", rawVox);
+    FileRead("Assets/monu1.vox", rawVox);
     auto voxScene = ogt_vox_read_scene(rawVox.data(), rawVox.size());
 
     std::vector<glm::vec3> positions = {};
+    std::vector<glm::mat4> transforms = {};
 
     for (uint32_t i = 0; i < voxScene->num_instances; i++)
     {
         auto& instance = voxScene->instances[i];
         auto& model = voxScene->models[instance.model_index];
         
-        glm::mat4 transform = glm::make_mat4(&instance.transform.m00);
+        transforms.push_back(glm::transpose(glm::make_mat4(&instance.transform.m00)));
 
         uint32_t sizeX = model->size_x;
         uint32_t sizeY = model->size_y;
         uint32_t sizeZ = model->size_z;
-
 
         // Iterate over the voxels in the model
         for (uint32_t x = 0; x < sizeX; x++)
@@ -127,27 +128,25 @@ void BoxIntersections::CreateAS()
             {
                 for (uint32_t z = 0; z < sizeZ; z++)
                 {
-                    if (model->voxel_data[x + y * sizeX + z * sizeX * sizeY] != 0)
-                    {
-						auto pos = transform * glm::vec4(x, y, z, 1.0f);
-
-                        positions.push_back(glm::vec3(pos));
-					}
+                    // if (model->voxel_data[x + y * sizeX + z * sizeX * sizeY] != 0)
+                    // {
+                        positions.push_back(glm::vec3(x, z, y));
+					// }
 				}
 			}
 		}
-
     }
 
-    uint64_t sceneSize = 0;
-
-    for (auto& geom : scene.Geometries)
-    {
-		sceneSize += positions.size() * sizeof(vk::AabbPositionsKHR);
-	}
+    uint64_t sceneSize = positions.size() * sizeof(vk::AabbPositionsKHR);
+    uint64_t transformSize = transforms.size() * sizeof(glm::mat4);
 
     mAABBBuffer = mVRDev->CreateBuffer(
         sceneSize,
+        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
+        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT); // this buffer will be used as a source for the BLAS
+
+    mTransformBuffer = mVRDev->CreateBuffer(
+        transformSize,
         vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
         VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT); // this buffer will be used as a source for the BLAS
 
@@ -166,6 +165,7 @@ void BoxIntersections::CreateAS()
     geomData.PrimitiveCount = positions.size();
     geomData.Stride = sizeof(vk::AabbPositionsKHR);
     geomData.DataAddresses.AABBDevAddress = mAABBBuffer.DevAddress;
+    geomData.DataAddresses.TransformDevAddress = mTransformBuffer.DevAddress;
 
     for (auto& pos : positions)
     {
@@ -193,6 +193,7 @@ void BoxIntersections::CreateAS()
 	}
 
     mVRDev->UpdateBuffer(mAABBBuffer, aabbs.data(), sceneSize, 0);
+    mVRDev->UpdateBuffer(mTransformBuffer, transforms.data(), transformSize, 0);
 
 
     auto BLASscratchBuffer = mVRDev->CreateScratchBufferFromBuildInfos(buildInfos);
@@ -372,7 +373,7 @@ void BoxIntersections::Update(vk::CommandBuffer renderCmd)
 
     mPerformanceData.push_back({glfwGetTime(), time * mTimestampPeriodToMs});
 
-    VULRAY_FLOG_INFO("Performance Time: %f", time * mTimestampPeriodToMs);
+    // VULRAY_FLOG_INFO("Performance Time: %f", time * mTimestampPeriodToMs);
 
     if (mPerformanceData.size() > 100)
     {
@@ -400,6 +401,7 @@ void BoxIntersections::Stop()
     mVRDev->DestroyBuffer(mResourceDescBuffer.Buffer);
 
     mVRDev->DestroyBuffer(mAABBBuffer);
+    mVRDev->DestroyBuffer(mTransformBuffer);
 
     for (auto& blasHandle : mBLASHandles)
     {
