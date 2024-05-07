@@ -170,7 +170,7 @@ void BoxIntersections::CreateAS()
 
     for (auto& pos : positions)
     {
-        const float voxSide = 0.4;
+        const float voxSide = 0.5;
 
 		auto aabb = vk::AabbPositionsKHR();
 		aabb.minX = pos.x - voxSide;
