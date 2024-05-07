@@ -135,6 +135,7 @@ void BoxIntersections::CreateAS()
 				}
 			}
 		}
+
     }
 
     uint64_t sceneSize = positions.size() * sizeof(vk::AabbPositionsKHR);
@@ -169,7 +170,7 @@ void BoxIntersections::CreateAS()
 
     for (auto& pos : positions)
     {
-        const float voxSide = 0.5;
+        const float voxSide = 0.4;
 
 		auto aabb = vk::AabbPositionsKHR();
 		aabb.minX = pos.x - voxSide;
