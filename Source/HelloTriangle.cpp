@@ -103,39 +103,23 @@ void BoxIntersections::CreateQueryPool()
 
 void BoxIntersections::CreateAS()
 {
-    std::vector<uint8_t> rawVox;
-    FileRead("Assets/monu1.vox", rawVox);
-    auto voxScene = ogt_vox_read_scene(rawVox.data(), rawVox.size());
 
     std::vector<glm::vec3> positions = {};
     std::vector<glm::mat4> transforms = {};
 
-    for (uint32_t i = 0; i < voxScene->num_instances; i++)
-    {
-        auto& instance = voxScene->instances[i];
-        auto& model = voxScene->models[instance.model_index];
-        
-        transforms.push_back(glm::transpose(glm::make_mat4(&instance.transform.m00)));
 
-        uint32_t sizeX = model->size_x;
-        uint32_t sizeY = model->size_y;
-        uint32_t sizeZ = model->size_z;
+    transforms.push_back(glm::transpose(glm::mat4(1.0f)));
 
         // Iterate over the voxels in the model
-        for (uint32_t x = 0; x < sizeX; x++)
+    for (uint32_t z = 0; z < 126; z++)
+    {
+        for (uint32_t y = 0; y < 126; y++)
         {
-            for (uint32_t y = 0; y < sizeY; y++)
+            for (uint32_t x = 0; x < 126; x++)
             {
-                for (uint32_t z = 0; z < sizeZ; z++)
-                {
-                    // if (model->voxel_data[x + y * sizeX + z * sizeX * sizeY] != 0)
-                    // {
-                        positions.push_back(glm::vec3(x, z, y));
-					// }
-				}
-			}
-		}
-
+                positions.push_back(glm::vec3(x, y, z));
+            }
+        }
     }
 
     uint64_t sceneSize = positions.size() * sizeof(vk::AabbPositionsKHR);
@@ -166,7 +150,7 @@ void BoxIntersections::CreateAS()
     geomData.PrimitiveCount = positions.size();
     geomData.Stride = sizeof(vk::AabbPositionsKHR);
     geomData.DataAddresses.AABBDevAddress = mAABBBuffer.DevAddress;
-    geomData.DataAddresses.TransformDevAddress = mTransformBuffer.DevAddress;
+    // geomData.DataAddresses.TransformDevAddress = mTransformBuffer.DevAddress;
 
     for (auto& pos : positions)
     {
