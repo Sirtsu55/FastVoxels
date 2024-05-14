@@ -1,13 +1,10 @@
-#include "Vulray/Vulray.h"
 #include "Base/Common.h"
 #include "Base/ShaderCompiler.h"
 #include "Base/Application.h"
 #include "Base/FileRead.h"
-#include "Base/MeshLoader.h"
 
 #define OGT_VOX_IMPLEMENTATION
 #include "Base/ogt_vox.h"
-
 
 struct PerformanceData
 {
@@ -19,37 +16,23 @@ class BoxIntersections : public Application
 {
 public:
     virtual void Start() override;
-    virtual void Update(vk::CommandBuffer renderCmd) override;
+    virtual void Update() override;
     virtual void Stop() override;
 
-    // functions to break up the start function
-    void CreateAS();
-    void CreateRTPipeline();
-    void UpdateDescriptorSet();
-    void CreateQueryPool();
 
 public:
     ShaderCompiler mShaderCompiler;
 
-    MeshLoader mMeshLoader;
+	ComPtr<DMA::Allocation> mBLAS;
+	ComPtr<DMA::Allocation> mTLAS;
 
-    vr::AllocatedBuffer mAABBBuffer;
-    vr::AllocatedBuffer mTransformBuffer;
+	DXR::ShaderTable mShaderTable;
+	ComPtr<ID3D12StateObject> mPipeline;
+	ComPtr<ID3D12RootSignature> mRootSig;
 
-    vr::SBTBuffer mSBTBuffer;
+	ComPtr<DMA::Allocation> mAABBBuffer;
+	ComPtr<DMA::Allocation> mInstanceBuffer;
 
-    std::vector<vr::DescriptorItem> mResourceBindings;
-    vk::DescriptorSetLayout mResourceDescriptorLayout;
-    vr::DescriptorBuffer mResourceDescBuffer;
-
-    vk::Pipeline mRTPipeline = nullptr;
-    vk::PipelineLayout mPipelineLayout = nullptr;
-
-    std::vector<vr::BLASHandle> mBLASHandles;
-    vr::TLASHandle mTLASHandle;
-
-    vk::QueryPool mPerfTimePool = nullptr;
-    double mTimestampPeriodToMs = 0.0;
 
     std::ofstream mPerformanceFile;
 
@@ -59,350 +42,177 @@ public:
 
 void BoxIntersections::Start()
 {
-    CreateQueryPool();
-
-    CreateBaseResources();
-
-    CreateRTPipeline();
-
-    CreateAS();
-
-    UpdateDescriptorSet();
-}
-
-void BoxIntersections::CreateQueryPool()
-{
-
-    vk::PhysicalDeviceLimits const& device_limits = mPhysicalDevice.getProperties().limits;
-
-    if (device_limits.timestampPeriod == 0)
-    {
-        throw std::runtime_error{ "The selected device does not support timestamp queries!" };
-    }
-
-    if (!device_limits.timestampComputeAndGraphics)
-    {
-        // Check if the graphics queue used in this sample supports time stamps
-        vk::QueueFamilyProperties const& graphics_queue_family_properties = mPhysicalDevice.getQueueFamilyProperties()[mQueues.GraphicsIndex];
-        if (graphics_queue_family_properties.timestampValidBits == 0)
-        {
-            throw std::runtime_error{ "The selected graphics queue family does not support timestamp queries!" };
-        }
-    }
-
-    mPerfTimePool = mDevice.createQueryPool(vk::QueryPoolCreateInfo({}, vk::QueryType::eTimestamp, 2));
-
-    mTimestampPeriodToMs = device_limits.timestampPeriod / 1000000.0;
-
     // Write the header to the file
+    mPerformanceData.reserve(100);
     mPerformanceFile.open("PerformanceData.csv", std::ios::out);
     mPerformanceFile << "Application Time (s),Performance Time (ms)" << std::endl;
 
-    mPerformanceData.reserve(100);
-}
+    // Create bindless root sig 
+	ComPtr<ID3DBlob> rootSigBlob;
+	ComPtr<ID3DBlob> errorBlob;
+	D3D12_ROOT_SIGNATURE_DESC rootDesc = {};
+	rootDesc.Flags = D3D12_ROOT_SIGNATURE_FLAG_CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED;
+	D3D12SerializeRootSignature(&rootDesc, D3D_ROOT_SIGNATURE_VERSION_1, &rootSigBlob, &errorBlob);
 
-void BoxIntersections::CreateAS()
-{
-
-    std::vector<glm::vec3> positions = {};
-    std::vector<glm::mat4> transforms = {};
-
-
-    transforms.push_back(glm::transpose(glm::mat4(1.0f)));
-
-        // Iterate over the voxels in the model
-    for (uint32_t z = 0; z < 126; z++)
-    {
-        for (uint32_t y = 0; y < 126; y++)
-        {
-            for (uint32_t x = 0; x < 126; x++)
-            {
-                positions.push_back(glm::vec3(x, y, z));
-            }
-        }
-    }
-
-    uint64_t sceneSize = positions.size() * sizeof(vk::AabbPositionsKHR);
-    uint64_t transformSize = transforms.size() * sizeof(glm::mat4);
-
-    mAABBBuffer = mVRDev->CreateBuffer(
-        sceneSize,
-        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT); // this buffer will be used as a source for the BLAS
-
-    mTransformBuffer = mVRDev->CreateBuffer(
-        transformSize,
-        vk::BufferUsageFlagBits::eAccelerationStructureBuildInputReadOnlyKHR,
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT); // this buffer will be used as a source for the BLAS
-
-    // Convert Point Cloud to AABBs
-
-    std::vector<vr::BLASCreateInfo> blasCreateInfos = {};
-
-    uint64_t offset = 0;
-    std::vector<vk::AabbPositionsKHR> aabbs = {};
-    aabbs.reserve(sceneSize / sizeof(vk::AabbPositionsKHR));
-
-    auto& blasInfo = blasCreateInfos.emplace_back();
-
-    auto& geomData = blasInfo.Geometries.emplace_back();
-    geomData.Type = vk::GeometryTypeKHR::eAabbs;
-    geomData.PrimitiveCount = positions.size();
-    geomData.Stride = sizeof(vk::AabbPositionsKHR);
-    geomData.DataAddresses.AABBDevAddress = mAABBBuffer.DevAddress;
-    // geomData.DataAddresses.TransformDevAddress = mTransformBuffer.DevAddress;
-
-    for (auto& pos : positions)
-    {
-        const float voxSide = 0.5;
-
-		auto aabb = vk::AabbPositionsKHR();
-		aabb.minX = pos.x - voxSide;
-		aabb.minY = pos.y - voxSide;
-		aabb.minZ = pos.z - voxSide;
-		aabb.maxX = pos.x + voxSide;
-		aabb.maxY = pos.y + voxSide;
-		aabb.maxZ = pos.z + voxSide;
-
-		aabbs.push_back(aabb);
+	if (errorBlob != nullptr)
+	{
+		std::string error = (char*)errorBlob->GetBufferPointer();
+		std::cout << error << std::endl;
 	}
 
-    std::vector<vr::BLASBuildInfo> buildInfos = {};
+	mDXDevice->CreateRootSignature(0, rootSigBlob->GetBufferPointer(), rootSigBlob->GetBufferSize(), IID_PPV_ARGS(&mRootSig));
 
-    for (auto& blasCreateInfo : blasCreateInfos)
-    {
-        auto& buildInfo = buildInfos.emplace_back();
-        auto& blasHandle = mBLASHandles.emplace_back();
+	// Create the pipeline
+    auto dxil = mShaderCompiler.CompileFromFile("Shaders/BasicShader.hlsl");
+	assert(dxil != nullptr);
+	CD3DX12_SHADER_BYTECODE shader{ dxil->GetBufferPointer(), dxil->GetBufferSize() };
 
-        std::tie(blasHandle, buildInfo) = mVRDev->CreateBLAS(blasCreateInfo);
-	}
+	CD3DX12_STATE_OBJECT_DESC rtPipeline(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
 
-    mVRDev->UpdateBuffer(mAABBBuffer, aabbs.data(), sceneSize, 0);
-    mVRDev->UpdateBuffer(mTransformBuffer, transforms.data(), transformSize, 0);
+	// Add the root signature
+	auto* rootSig = rtPipeline.CreateSubobject<CD3DX12_GLOBAL_ROOT_SIGNATURE_SUBOBJECT>();
+	rootSig->SetRootSignature(mRootSig.Get());
 
+	// Add the DXIL library
+    auto* lib = rtPipeline.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>();
+	lib->SetDXILLibrary(&shader);
+	lib->DefineExport(L"rgen");
+    lib->DefineExport(L"miss");
+    lib->DefineExport(L"chit");
+    lib->DefineExport(L"isect");
+	lib->DefineExport(L"AABBHitGroup");
+	lib->DefineExport(L"ShaderConfig");
+	lib->DefineExport(L"PipelineConfig");
 
-    auto BLASscratchBuffer = mVRDev->CreateScratchBufferFromBuildInfos(buildInfos);
+	// Export the root signature
+	mPipeline = mDevice->CreatePipeline(rtPipeline);
 
+	mShaderTable.AddShader(L"rgen", DXR::ShaderType::RayGen);
+	mShaderTable.AddShader(L"miss", DXR::ShaderType::Miss);
+	mShaderTable.AddShader(L"AABBHitGroup", DXR::ShaderType::HitGroup);
 
-    // create a TLAS
-    vr::TLASCreateInfo tlasCreateInfo = {};
-    tlasCreateInfo.Flags = vk::BuildAccelerationStructureFlagBitsKHR::ePreferFastTrace;
-    tlasCreateInfo.MaxInstanceCount = 1; // Max number of instances in the TLAS, when building the TLAS num of instances may be lower
+	mDevice->CreateShaderTable(mShaderTable, D3D12_HEAP_TYPE_GPU_UPLOAD, mPipeline);
 
-    auto [tlasHandle, tlasBuildInfo] = mVRDev->CreateTLAS(tlasCreateInfo);
+	// Create AS
+	uint32_t numBoxes = 1;
 
-    mTLASHandle = tlasHandle;
+	auto allocDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(D3D12_RAYTRACING_AABB) * numBoxes, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+	mAABBBuffer = mDevice->AllocateResource(allocDesc, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_GPU_UPLOAD);
 
-    auto TLASScratchBuffer = mVRDev->CreateScratchBufferFromBuildInfo(tlasBuildInfo);
+	// Fill the AABB buffer
+	D3D12_RAYTRACING_AABB* aabbs = (D3D12_RAYTRACING_AABB*)mDevice->MapAllocationForWrite(mAABBBuffer);
+	aabbs[0].MinX = -1.0f;
+	aabbs[0].MinY = -1.0f;
+	aabbs[0].MinZ = -1.0f;
+	aabbs[0].MaxX = 1.0f;
+	aabbs[0].MaxY = 1.0f;
+	aabbs[0].MaxZ = 1.0f;
 
-    // create a buffer for the instance data
-    auto InstanceBuffer = mVRDev->CreateInstanceBuffer(mBLASHandles.size());
+	mAABBBuffer->GetResource()->Unmap(0, nullptr);
 
-    // Specify the instance data
-
-    offset = 0;
-    for (auto& blasHandle : mBLASHandles)
-    {
-		auto inst = vk::AccelerationStructureInstanceKHR()
-					.setInstanceCustomIndex(0)
-					.setAccelerationStructureReference(blasHandle.Buffer.DevAddress)
-					.setFlags(vk::GeometryInstanceFlagBitsKHR::eForceOpaque)
-					.setMask(0xFF)
-					.setInstanceShaderBindingTableRecordOffset(0);
-
-		// set the transform matrix to identity
-        inst.transform = {
-			1.0f, 0.0f, 0.0f, 0.0f,
-			0.0f, 1.0f, 0.0f, 1.0f,
-			0.0f, 0.0f, 1.0f, 0.0f};
-
-		mVRDev->UpdateBuffer(InstanceBuffer, &inst, sizeof(vk::AccelerationStructureInstanceKHR), offset);
-
-		offset += sizeof(vk::AccelerationStructureInstanceKHR);
-	}
-
-
-    auto buildCmd = mDevice.allocateCommandBuffers(vk::CommandBufferAllocateInfo(mGraphicsPool, vk::CommandBufferLevel::ePrimary, 1))[0];
-
-    buildCmd.begin(vk::CommandBufferBeginInfo().setFlags(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-
-
-    mVRDev->BuildBLAS(buildInfos, buildCmd);
-
-    mVRDev->AddAccelerationBuildBarrier(buildCmd); // Add a barrier to the command buffer to make sure the BLAS build is finished before the TLAS build starts
-
-    mVRDev->BuildTLAS(tlasBuildInfo, InstanceBuffer, 1, buildCmd);
-
-    buildCmd.end();
-
-    // submit the command buffer and wait for it to finish
-    auto submitInfo = vk::SubmitInfo()
-                          .setCommandBufferCount(1)
-                          .setPCommandBuffers(&buildCmd);
-
-    mQueues.GraphicsQueue.submit(submitInfo, nullptr);
-
-    mDevice.waitIdle();
-
-    // Free the scratch buffers
-    mVRDev->DestroyBuffer(BLASscratchBuffer);
-    mVRDev->DestroyBuffer(TLASScratchBuffer);
-
-    mVRDev->DestroyBuffer(InstanceBuffer);
-
-    mDevice.freeCommandBuffers(mGraphicsPool, buildCmd);
-}
-
-void BoxIntersections::CreateRTPipeline()
-{
-
-    mResourceBindings = {
-        vr::DescriptorItem(0, vk::DescriptorType::eAccelerationStructureKHR, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mTLASHandle.Buffer.DevAddress),
-        vr::DescriptorItem(1, vk::DescriptorType::eUniformBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR, 1, &mUniformBuffer),
-        vr::DescriptorItem(2, vk::DescriptorType::eStorageBuffer, vk::ShaderStageFlagBits::eRaygenKHR | vk::ShaderStageFlagBits::eClosestHitKHR | vk::ShaderStageFlagBits::eIntersectionKHR, 1, &mAABBBuffer),
-        vr::DescriptorItem(3, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mOutputImage),
-        vr::DescriptorItem(4, vk::DescriptorType::eStorageImage, vk::ShaderStageFlagBits::eRaygenKHR, 1, &mAccumImage)
-    };
-
-    mResourceDescriptorLayout = mVRDev->CreateDescriptorSetLayout(mResourceBindings);
-
-    mPipelineLayout = mVRDev->CreatePipelineLayout(mResourceDescriptorLayout);
-
-    // create shaders for the ray tracing pipeline
-    auto spv = mShaderCompiler.CompileSPIRVFromFile("Shaders/BasicShader.hlsl");
-    auto chit = mShaderCompiler.CompileSPIRVFromFile("Shaders/Hit.hlsl");
-    auto isect = mShaderCompiler.CompileSPIRVFromFile("Shaders/Intersection.hlsl");
-
-    auto shaderModule = mVRDev->CreateShaderFromSPV(spv);
-    auto chitModule = mVRDev->CreateShaderFromSPV(chit);
-    auto isectModule = mVRDev->CreateShaderFromSPV(isect);
-
-    vr::PipelineSettings pipelineSettings = {};
-    pipelineSettings.PipelineLayout = mPipelineLayout;
-    pipelineSettings.MaxRecursionDepth = 1;
-    pipelineSettings.MaxPayloadSize = sizeof(float) * 2 + sizeof(glm::vec3) * 3;
-    pipelineSettings.MaxHitAttributeSize = sizeof(glm::vec3);
-
-    vr::RayTracingShaderCollection shaderCollection = {};
-    shaderCollection.RayGenShaders.push_back(shaderModule);
-    shaderCollection.RayGenShaders.back().EntryPoint = "rgen";
-
-    shaderCollection.MissShaders.push_back(shaderModule);
-    shaderCollection.MissShaders.back().EntryPoint = "miss";
-
-    vr::HitGroup hitGroup = {};
-    hitGroup.ClosestHitShader = chitModule;
-    hitGroup.ClosestHitShader.EntryPoint = "chit";
-    hitGroup.IntersectionShader = isectModule;
-    hitGroup.IntersectionShader.EntryPoint = "isect";
-    shaderCollection.HitGroups.push_back(hitGroup);
-
-    auto [pipeline, sbtInfo] = mVRDev->CreateRayTracingPipeline(shaderCollection, pipelineSettings);
-    mRTPipeline = pipeline;
-
-    mSBTBuffer = mVRDev->CreateSBT(mRTPipeline, sbtInfo);
-
-    // create a descriptor buffer for the ray tracing pipeline
-    mResourceDescBuffer = mVRDev->CreateDescriptorBuffer(mResourceDescriptorLayout, mResourceBindings, vr::DescriptorBufferType::Resource);
-
-    mDevice.destroyShaderModule(shaderModule.Module);
-    mDevice.destroyShaderModule(chitModule.Module);
-    mDevice.destroyShaderModule(isectModule.Module);
-}
-
-void BoxIntersections::UpdateDescriptorSet()
-{
-    mCamera.Position = glm::vec3(0.0f, 0.0f, 5.0f);
-
-    mVRDev->UpdateDescriptorBuffer(mResourceDescBuffer, mResourceBindings, vr::DescriptorBufferType::Resource);
-}
-
-void BoxIntersections::Update(vk::CommandBuffer renderCmd)
-{
-    UpdateCamera();
-
-    renderCmd.begin(vk::CommandBufferBeginInfo(vk::CommandBufferUsageFlagBits::eOneTimeSubmit));
-
-    renderCmd.resetQueryPool(mPerfTimePool, 0, 2);
-
-    mVRDev->BindDescriptorBuffer({mResourceDescBuffer}, renderCmd);
-    mVRDev->BindDescriptorSet(mPipelineLayout, 0, 0, 0, renderCmd);
-
-    mVRDev->TransitionImageLayout(
-        mOutputImageBuffer.Image,
-        vk::ImageLayout::eUndefined,
-        vk::ImageLayout::eGeneral,
-        vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1),
-        renderCmd);
-
-    renderCmd.writeTimestamp(vk::PipelineStageFlagBits::eRayTracingShaderKHR, mPerfTimePool, 0);
-
-    mVRDev->DispatchRays(mRTPipeline, mSBTBuffer, mRenderWidth, mRenderHeight, 1, renderCmd);
-
-    renderCmd.writeTimestamp(vk::PipelineStageFlagBits::eRayTracingShaderKHR, mPerfTimePool, 1);
-
-    // Helper function in Application Class to blit the image to the swapchain image
-    BlitImage(renderCmd);
-
-    renderCmd.end();
-
-    WaitForRendering();
-
-    Present(renderCmd);
-
-    // Get the timestamps
-    uint64_t timestamps[2] = {};
-    auto _ = mDevice.getQueryPoolResults(mPerfTimePool, 0, 2, sizeof(uint64_t) * 2, timestamps, sizeof(uint64_t), vk::QueryResultFlagBits::e64 | vk::QueryResultFlagBits::eWait);
-
-    uint64_t time = timestamps[1] - timestamps[0];
-
-    mPerformanceData.push_back({glfwGetTime(), time * mTimestampPeriodToMs});
-
-    // VULRAY_FLOG_INFO("Performance Time: %f", time * mTimestampPeriodToMs);
-
-    if (mPerformanceData.size() > 100)
-    {
-        for (auto& data : mPerformanceData)
-        {
-            mPerformanceFile << data.ApplicationTime << "," << data.PerformanceTime << "\n";
+	DXR::AccelerationStructureDesc blasDesc = {};
+	blasDesc.Geometries.push_back(
+		D3D12_RAYTRACING_GEOMETRY_DESC{
+			.Type = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS,
+			.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE,
+			.AABBs = D3D12_RAYTRACING_GEOMETRY_AABBS_DESC{
+				.AABBCount = 1,
+				.AABBs = D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE{
+					.StartAddress = mAABBBuffer->GetResource()->GetGPUVirtualAddress(),
+					.StrideInBytes = sizeof(D3D12_RAYTRACING_AABB)
+				}
+			},
 		}
+	);
 
-        mPerformanceData.clear();
-	}
+	mBLAS = mDevice->AllocateAccelerationStructure(blasDesc);
 
+	// Create TLAS
+
+	glm::mat4 transform = glm::mat4(1.0f);
+
+	allocDesc = CD3DX12_RESOURCE_DESC::Buffer(sizeof(D3D12_RAYTRACING_INSTANCE_DESC), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+	mInstanceBuffer = mDevice->AllocateInstanceBuffer(1, D3D12_HEAP_TYPE_GPU_UPLOAD);
+
+	D3D12_RAYTRACING_INSTANCE_DESC* instances = (D3D12_RAYTRACING_INSTANCE_DESC*)mDevice->MapAllocationForWrite(mInstanceBuffer);
+
+	instances[0].InstanceID = 0;
+	instances[0].InstanceContributionToHitGroupIndex = 0;
+	instances[0].InstanceMask = 0xFF;
+	instances[0].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE;
+	instances[0].AccelerationStructure = mBLAS->GetResource()->GetGPUVirtualAddress();
+	memcpy(instances[0].Transform, glm::value_ptr(transform), sizeof(float) * 12);
+
+	mInstanceBuffer->GetResource()->Unmap(0, nullptr);
+
+	DXR::AccelerationStructureDesc tlasDesc = {};
+	tlasDesc.NumInstanceDescs = 1;
+	tlasDesc.vpInstanceDescs = mInstanceBuffer->GetResource()->GetGPUVirtualAddress();
+
+	mTLAS = mDevice->AllocateAccelerationStructure(tlasDesc);
+
+	ComPtr<DMA::Allocation> scratchBuffer = mDevice->AllocateScratchBuffer(blasDesc.GetScratchBufferSize() + tlasDesc.GetScratchBufferSize());
+	blasDesc.GetBuildDesc().ScratchAccelerationStructureData = scratchBuffer->GetResource()->GetGPUVirtualAddress();
+	tlasDesc.GetBuildDesc().ScratchAccelerationStructureData = scratchBuffer->GetResource()->GetGPUVirtualAddress();
+
+	// Build the acceleration structures
+	THROW_IF_FAILED(mCommandAllocators[mBackBufferIndex]->Reset());
+	THROW_IF_FAILED(mCommandList->Reset(mCommandAllocators[mBackBufferIndex].Get(), nullptr));
+
+	mDevice->BuildAccelerationStructure(blasDesc, mCommandList);
+
+	// Barrier
+	D3D12_RESOURCE_BARRIER barrier = CD3DX12_RESOURCE_BARRIER::UAV(mBLAS->GetResource());
+	mCommandList->ResourceBarrier(1, &barrier);
+
+	mDevice->BuildAccelerationStructure(tlasDesc, mCommandList);
+
+	mCommandList->Close();
+
+	ID3D12CommandList* ppCommandLists[] = { mCommandList.Get() };
+	mCommandQueue->ExecuteCommandLists(1, ppCommandLists);
+
+	mCommandQueue->Signal(mFence.Get(), ++mFenceValue);
+
+	// Wait for the command list to finish
+	mFence->SetEventOnCompletion(mFenceValue, mFenceEvent);
+	WaitForSingleObject(mFenceEvent, INFINITE);
+
+	// Create descriptors
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(mResourceHeap->GetCPUDescriptorHandleForHeapStart(), 3, mResourceDescriptorSize);
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.RaytracingAccelerationStructure.Location = mTLAS->GetResource()->GetGPUVirtualAddress();
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_RAYTRACING_ACCELERATION_STRUCTURE;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	mDXDevice->CreateShaderResourceView(nullptr, &srvDesc, cpuHandle);
+}
+
+void BoxIntersections::Update()
+{
+	mCommandList->SetPipelineState1(mPipeline.Get());
+
+	D3D12_DISPATCH_RAYS_DESC desc = mShaderTable.GetRaysDesc(0, mWidth, mHeight);
+	mCommandList->DispatchRays(&desc);
+
+	// Cop the output image to the back buffer
+	D3D12_RESOURCE_BARRIER barriers[] = {
+		CD3DX12_RESOURCE_BARRIER::Transition(mBackBuffers[mBackBufferIndex].Get(), D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST),
+		CD3DX12_RESOURCE_BARRIER::Transition(mOutputImage->GetResource(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE),
+	};
+	mCommandList->ResourceBarrier(2, barriers);
+
+	mCommandList->CopyResource(mBackBuffers[mBackBufferIndex].Get(), mOutputImage->GetResource());
+
+	barriers[0] = CD3DX12_RESOURCE_BARRIER::Transition(mBackBuffers[mBackBufferIndex].Get(), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PRESENT);
+	barriers[1] = CD3DX12_RESOURCE_BARRIER::Transition(mOutputImage->GetResource(), D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+	mCommandList->ResourceBarrier(2, barriers);
 }
 
 void BoxIntersections::Stop()
 {
-    auto _ = mDevice.waitForFences(mRenderFence, VK_TRUE, UINT64_MAX);
 
-    // destroy all the resources we created
-    mVRDev->DestroySBTBuffer(mSBTBuffer);
-
-    mDevice.destroyPipeline(mRTPipeline);
-    mDevice.destroyPipelineLayout(mPipelineLayout);
-
-    mDevice.destroyDescriptorSetLayout(mResourceDescriptorLayout);
-    mVRDev->DestroyBuffer(mResourceDescBuffer.Buffer);
-
-    mVRDev->DestroyBuffer(mAABBBuffer);
-    mVRDev->DestroyBuffer(mTransformBuffer);
-
-    for (auto& blasHandle : mBLASHandles)
-    {
-		mVRDev->DestroyBLAS(blasHandle);
-	}
-
-    mDevice.destroyQueryPool(mPerfTimePool);
-
-    mVRDev->DestroyTLAS(mTLASHandle);
-
-    for (auto& data : mPerformanceData)
-    {
-        mPerformanceFile << data.ApplicationTime << "," << data.PerformanceTime << "\n";
-    }
-
-    mPerformanceData.clear();
 }
 
 int main()
@@ -412,9 +222,7 @@ int main()
     // it can be found in the Base folder
     Application *app = new BoxIntersections();
 
-    app->Start();
     app->Run();
-    app->Stop();
 
     delete app;
 }

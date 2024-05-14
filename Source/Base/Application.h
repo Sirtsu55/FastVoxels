@@ -9,73 +9,64 @@ public:
 	Application();
 	virtual ~Application();
 
-	void BlitImage(vk::CommandBuffer renderCmd);
-
-	void Run();
-
 	//Functions to be overriden by the samples
-	virtual void Start();
+	virtual void Start() {};
 
-	virtual void Update(vk::CommandBuffer renderCmd);
+	virtual void Update() {};
 	
-	virtual void Stop();
+	virtual void Stop() {};
 
 	void BeginFrame();
 
-	void WaitForRendering();
-
-	void Present(vk::CommandBuffer commandBuffer);
-
-	void CreateBaseResources();
+	void EndFrame();
 
 	void UpdateCamera();
 
-private:
-	void HandleResize();
+	void CleanUp();
+	
+	void Run();
 
+private:
 
 protected:
 
+	ComPtr<IDXGIFactory7> mFactory = nullptr;
+	ComPtr<IDXGIAdapter4> mAdapter = nullptr;
+	ComPtr<IDXGISwapChain4> mSwapchain = nullptr;
+
+	ComPtr<ID3D12Device7> mDXDevice = nullptr;
+	ComPtr<ID3D12CommandQueue> mCommandQueue = nullptr;
+	ComPtr<ID3D12CommandAllocator> mCommandAllocators[2] = { 0 };
+	ComPtr<ID3D12GraphicsCommandList4> mCommandList = nullptr;
+
+	ComPtr<ID3D12DescriptorHeap> mRTVHeap = nullptr;
+	ComPtr<ID3D12DescriptorHeap> mResourceHeap = nullptr;
+	ComPtr<ID3D12Fence> mFence = nullptr;
+	ComPtr<ID3D12Resource> mBackBuffers[2] = { 0 };
+
+	UINT64 mFenceValue = 0;
+
+	UINT64 mFrameFenceValues[2] = { 0 };
+
+	HANDLE mFenceEvent = nullptr;
+
+	std::unique_ptr<DXR::Device> mDevice = nullptr;
+
+	UINT32 mTearingSupport = 0;
+	UINT32 mBackBufferIndex = 0;
+	UINT32 mRTVDescriptorSize = 0;
+	UINT32 mResourceDescriptorSize = 0;
+
+	ComPtr<DMA::Allocation> mOutputImage;
+	ComPtr<DMA::Allocation> mAccumulationImage;
+	ComPtr<DMA::Allocation> mConstantBuffer;
+	ComPtr<DMA::Allocation> mStagingBuffers[2] = { 0 };
+	CHAR* mStagingDatas[2] = { 0 };
+
 	GLFWwindow* mWindow = nullptr;
-	vk::Device mDevice = nullptr;
-	vk::SurfaceKHR mSurface = nullptr;
-	vr::InstanceWrapper mInstance;
-	vk::PhysicalDevice mPhysicalDevice = nullptr;
-	vr::CommandQueues mQueues;
 
-
-	vk::CommandPool mGraphicsPool;
-
-	vr::AllocatedImage mOutputImageBuffer;
-    vr::AccessibleImage mOutputImage;
-
-	vr::AllocatedImage mAccumImageBuffer;
-    vr::AccessibleImage mAccumImage;
-
-	vr::SwapchainBuilder mSwapchainBuilder;
-	vr::SwapchainResources mSwapchainResources;
-	vk::SwapchainKHR mOldSwapchain = nullptr;
-	
-	uint32_t mMaxFramesInFlight = 0;
-
-	uint32_t mWindowWidth = 1980;
-	uint32_t mWindowHeight = 1080;
-
-	const uint32_t mRenderWidth = 1980;
-	const uint32_t mRenderHeight = 1080;
-
-	uint32_t mCurrentSwapchainImage = 0;
-
-	vk::Semaphore mRenderSemaphore;
-	vk::Semaphore mPresentSemaphore;
-	vk::Fence mRenderFence;
-
-	vr::VulrayDevice* mVRDev = nullptr;
-
-    std::vector<vk::CommandBuffer> mRTRenderCmd; // one recording and one pending
-    uint32_t mRTRenderCmdIndex = 0;
-
-	vr::AllocatedBuffer mUniformBuffer = {};
+	UINT32 mWidth = 1980;
+	UINT32 mHeight = 1080;
 
 	Camera mCamera;
 
@@ -87,9 +78,8 @@ protected:
 
 	float DeltaTime = 0.0f;
 
-	uint64_t mFrameCount = 0;
-	uint32_t mPassiveFrameCount = 0;
-
+	UINT64 mFrameCount = 0;
+	UINT64 mPassiveFrameCount = 0;
 	
 	SimpleTimer mFrameTimer;
 };

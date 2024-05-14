@@ -1,13 +1,7 @@
 #pragma once
-#include <vulkan/vulkan.hpp>
 
-#ifdef _WIN32
-    #include <atlbase.h>
-#else
-    #include <dxc/WinAdapter.h>
-#endif
-
-#include <dxc/dxcapi.h>
+#include <dxcapi.h>
+#include <d3dcompiler.h>
 
 class ShaderCompiler
 {
@@ -16,13 +10,13 @@ public:
 
     ~ShaderCompiler();
 
-    std::vector<uint32_t> CompileSPIRVFromSource(const std::vector<char>& source);
-    std::vector<uint32_t> CompileSPIRVFromFile(const std::string& file);
+    ComPtr<IDxcBlob> CompileFromSource(const std::vector<char>& source);
+    ComPtr<IDxcBlob> CompileFromFile(const std::string& file);
 private:
 
-    CComPtr<IDxcUtils> mUtils;
-    CComPtr<IDxcCompiler3> mCompiler;
-    CComPtr<IDxcIncludeHandler> mIncludeHandler;
+    ComPtr<IDxcUtils> mUtils;
+    ComPtr<IDxcCompiler3> mCompiler;
+    ComPtr<IDxcIncludeHandler> mIncludeHandler;
 };
 
 

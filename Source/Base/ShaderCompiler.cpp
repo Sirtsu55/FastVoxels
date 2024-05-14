@@ -1,10 +1,7 @@
 #include "ShaderCompiler.h"
 #include "FileRead.h"
-#include "Vulray/Vulray.h"
 #include <filesystem>
 #include <algorithm>
-
-
 
 ShaderCompiler::ShaderCompiler()
 {
@@ -14,11 +11,11 @@ ShaderCompiler::ShaderCompiler()
 }
 
 
-std::vector<uint32_t> ShaderCompiler::CompileSPIRVFromSource(const std::vector<char>& source)
+ComPtr<IDxcBlob> ShaderCompiler::CompileFromSource(const std::vector<char>& source)
 {
-
-    CComPtr<IDxcBlobEncoding> pSource;
+    ComPtr<IDxcBlobEncoding> pSource;
     mUtils->CreateBlob(source.data(), source.size(), CP_UTF8, &pSource);
+
     // Preprocess the shader
     std::vector<const wchar_t*> arguments;
 
@@ -28,50 +25,42 @@ std::vector<uint32_t> ShaderCompiler::CompileSPIRVFromSource(const std::vector<c
     arguments.push_back(L"-E");
     arguments.push_back(L"main");
 
-    //Strip pdbs 
-    arguments.push_back(L"-Qstrip_debug");
-
-    //Compile to SPIR-V
-    arguments.push_back(L"-spirv");
-    arguments.push_back(L"-fvk-use-scalar-layout");
-    arguments.push_back(L"-fspv-target-env=vulkan1.3");
-
+    arguments.push_back(L"-enable-16bit-types");
 
     DxcBuffer sourceBuffer;
     sourceBuffer.Ptr = pSource->GetBufferPointer();
     sourceBuffer.Size = pSource->GetBufferSize();
     sourceBuffer.Encoding = 0;
 
-    CComPtr<IDxcResult> pCompileResult;
-    mCompiler->Compile(&sourceBuffer, arguments.data(), (uint32_t)arguments.size(), mIncludeHandler, IID_PPV_ARGS(&pCompileResult));
+    ComPtr<IDxcResult> pCompileResult;
+    mCompiler->Compile(&sourceBuffer, arguments.data(), (uint32_t)arguments.size(), mIncludeHandler.Get(), IID_PPV_ARGS(&pCompileResult));
 
     //Error Handling
-    CComPtr<IDxcBlobUtf8> pErrors;
+    ComPtr<IDxcBlobUtf8> pErrors;
     pCompileResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&pErrors), nullptr);
+
     if (pErrors && pErrors->GetStringLength() > 0)
     {
-        VULRAY_FLOG_ERROR("DXC Error: %s", pErrors->GetStringPointer());
+        std::printf("DXC Error: %s", pErrors->GetStringPointer());
     }
 
-    CComPtr<IDxcBlob> pSpirv;
-    pCompileResult->GetResult(&pSpirv);
+    ComPtr<IDxcBlob> pDxil;
+    pCompileResult->GetResult(&pDxil);
 
-    uint32_t spirvSize = pSpirv->GetBufferSize() / sizeof(uint32_t); // always a multiple of 4
-
-    if (spirvSize == 0)
+	if (pDxil->GetBufferSize() == 0)
     {
-        VULRAY_LOG_ERROR("Failed to compile shader");
+        std::printf("Failed to compile shader");
         return {};
     }
 
-    return std::vector<uint32_t>((uint32_t*)pSpirv->GetBufferPointer(), (uint32_t*)pSpirv->GetBufferPointer() + spirvSize);
+	return pDxil;
 }
 
-std::vector<uint32_t> ShaderCompiler::CompileSPIRVFromFile(const std::string& file)
+ComPtr<IDxcBlob> ShaderCompiler::CompileFromFile(const std::string& file)
 {
     std::vector<char> shaderCode;
     FileRead(file, shaderCode);
-    return CompileSPIRVFromSource(shaderCode);
+    return CompileFromSource(shaderCode);
 }
 
 ShaderCompiler::~ShaderCompiler()

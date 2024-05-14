@@ -11,8 +11,8 @@ bool FileRead(const std::string& filePath, std::vector<T>& outVector)
 
 	if (!file.is_open())
 	{
-		VULRAY_FLOG_ERROR("Failed to open file: %s", filePath.c_str());
-		VULRAY_LOG_ERROR("Invalid Path or File invalid");
+		std::printf("Failed to open file: %s", filePath.c_str());
+		std::printf("Invalid Path or File invalid");
 
 		return false;
 	}

@@ -9,4 +9,6 @@ build/
 # Scenes
 Assets/
 
+Deps/DXRay/Deps
+
 

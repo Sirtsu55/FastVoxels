@@ -10,26 +10,45 @@ struct BoxHitAttributes
     float3 Normal;
 };
 
-struct [raypayload] Payload
+struct Payload
 {
-    [[vk::location(0)]] float3 HitColor;
-    [[vk::location(1)]] float HitLight;
-    [[vk::location(3)]] float3 NextOrigin;
-    [[vk::location(4)]] float3 NextDir;
-    [[vk::location(5)]] bool TerminateRay;
-
+    float3 HitColor;
+    
+    float HitLight;
+    float3 HitLoc;
+    
+    float3 NextDir;
+    bool TerminateRay;
 };
 
+RaytracingAccelerationStructure rs;
 
-[[vk::binding(0, 0)]] RaytracingAccelerationStructure rs;
-[[vk::binding(1, 0)]]
-cbuffer uniformBuffer
+struct SceneInfo
 {
-    float4x4 viewInverse;
-    float4x4 projInverse;
+    float4x4 View;
+    float4x4 Proj;
     float4 otherInfo;
 };
-[[vk::binding(2, 0)]] StructuredBuffer<AABB> aabbBuffer;
-[[vk::binding(3, 0)]] RWTexture2D<float4> outImage;
-[[vk::binding(4, 0)]] RWTexture2D<float4> accumImage;
+
+StructuredBuffer<AABB> aabbBuffer;
+RWTexture2D<float4> outImage;
+RWTexture2D<float4> accumImage;
+
+ProceduralPrimitiveHitGroup AABBHitGroup =
+{
+    "", // AnyHit
+    "chit", // ClosestHit
+    "isect", // Intersection
+};
+
+RaytracingShaderConfig ShaderConfig =
+{
+    44,
+    16
+};
+
+RaytracingPipelineConfig PipelineConfig =
+{
+    1
+};
 

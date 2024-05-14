@@ -1,249 +1,241 @@
 #include "Common.h"
 #include "Application.h"
 
+DXRAY_AGILITY_SDK_IMPLEMENTATION;
+
 Application::Application()
 {
     glfwInit(); // Initializes the GLFW library
 
-    if (glfwVulkanSupported() != GLFW_TRUE)
+    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API);
+    glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
+
+    mWindow = glfwCreateWindow(mWidth, mHeight, "FastVoxels", nullptr, nullptr); // Creates a window
+
+     // Create Factory
+    uint32_t dxgiFactoryFlags = 0;
+#if defined(_DEBUG)
+    dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
+#endif
+    THROW_IF_FAILED(CreateDXGIFactory2(dxgiFactoryFlags, IID_PPV_ARGS(&mFactory)));
+
+#if defined(_DEBUG)
+    // Enable the D3D12 debug layer.
+    ComPtr<ID3D12Debug> debugController;
+    if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&debugController))))
     {
-        VULRAY_LOG_ERROR("Vulkan is not supported on this system");
-        throw std::runtime_error("Vulkan is not supported on this system");
+        debugController->EnableDebugLayer();
     }
-
-    glfwWindowHint(GLFW_CLIENT_API, GLFW_NO_API); // Sets the client API to GLFW_NO_API, which means that the application will not create an OpenGL context
-    
-    // Need to enable this so the performance data is consistent across different runs and PCs 
-    // so that the user cannot cheat by running this on lower resolution
-    // glfwWindowHint(GLFW_RESIZABLE, GLFW_FALSE);
-
-    mWindow = glfwCreateWindow(mWindowWidth, mWindowHeight, "FastVoxels", nullptr, nullptr); // Creates a window
-
-    // specify debug callback by passing a pointer to the function if you want to use it
-    // vr::LogCallback = logcback;
-
-    vr::VulkanBuilder builder;
-#ifndef NDEBUG
-    builder.EnableDebug = true;
-#else
-    builder.EnableDebug = false;
 #endif
 
-    // Get the required extensions
-    uint32_t count;
-    const char **extensions = glfwGetRequiredInstanceExtensions(&count);
-    // Add the extensions to the builder
-    for (uint32_t i = 0; i < count; i++)
-    {
-        builder.InstanceExtensions.push_back(extensions[i]);
-    }
+    // Check for tearing support
+    mFactory->CheckFeatureSupport(DXGI_FEATURE_PRESENT_ALLOW_TEARING, &mTearingSupport, sizeof(UINT32));
 
-#ifdef NDEBUG
-    builder.EnableDebug = false;
-#else
-    builder.EnableDebug = true;
+    // Create Adapter
+    mFactory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&mAdapter));
+
+    // Create Device
+    THROW_IF_FAILED(D3D12CreateDevice(mAdapter.Get(), D3D_FEATURE_LEVEL_12_2, IID_PPV_ARGS(&mDXDevice)));
+
+    D3D12_FEATURE_DATA_D3D12_OPTIONS16 options16 = {};
+    bool GPUUploadHeapSupported = false;
+
+    if (!(SUCCEEDED(mDXDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS16, &options16, sizeof(options16))) && options16.GPUUploadHeapSupported))
+	{
+		MessageBoxW(NULL, L"GPU Upload Heap is not supported on this device", L"Error", MB_OK);
+		std::exit(1);
+	}
+
+    // Enable Info Queue
+#if defined(_DEBUG)
+    ComPtr<ID3D12InfoQueue> pInfoQueue;
+    if (SUCCEEDED(mDXDevice.As(&pInfoQueue)))
+    {
+        pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_CORRUPTION, TRUE);
+        pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_ERROR, TRUE);
+        pInfoQueue->SetBreakOnSeverity(D3D12_MESSAGE_SEVERITY_WARNING, TRUE);
+
+        D3D12_MESSAGE_SEVERITY severities[] = {
+            D3D12_MESSAGE_SEVERITY_INFO,
+        };
+
+        //D3D12_MESSAGE_ID denyIds[] = {
+        //};
+
+        D3D12_INFO_QUEUE_FILTER newFilter = {};
+        newFilter.DenyList.NumSeverities = _countof(severities);
+        newFilter.DenyList.pSeverityList = severities;
+        //newFilter.DenyList.NumIDs = _countof(denyIds);
+        //newFilter.DenyList.pIDList = denyIds;
+
+        THROW_IF_FAILED(pInfoQueue->PushStorageFilter(&newFilter));
+    }
 #endif
 
-    // Create the instance
-    mInstance = builder.CreateInstance();
+    // Create Command Queue
+    D3D12_COMMAND_QUEUE_DESC queueDesc = {};
+    queueDesc.Type = D3D12_COMMAND_LIST_TYPE_DIRECT;
+    queueDesc.Flags = D3D12_COMMAND_QUEUE_FLAG_NONE;
+    THROW_IF_FAILED(mDXDevice->CreateCommandQueue(&queueDesc, IID_PPV_ARGS(&mCommandQueue)));
 
-    // user can also add extra extensions to the device if they want to use them
-    // builder.DeviceExtensions.push_back(VK_KHR_SWAPCHAIN_EXTENSION_NAME);
+    // Create Swap Chain
+    DXGI_SWAP_CHAIN_DESC1 swapChainDesc = {};
+    swapChainDesc.BufferCount = 2;
+    swapChainDesc.Width = 0;
+    swapChainDesc.Height = 0;
+    swapChainDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    swapChainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
+    swapChainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_DISCARD;
+    swapChainDesc.SampleDesc.Count = 1;
+    swapChainDesc.Flags = mTearingSupport ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
-    // user can also enable extra features if they want to use them
-    // features from 1.0 to 1.3 are available
-    // builder.PhysicalDeviceFeatures12.bufferDeviceAddress = true;
+    ComPtr<IDXGISwapChain1> swapChain1 = nullptr;
 
-    // Create the surface for the window
-    VkSurfaceKHR surface;
-    auto r = glfwCreateWindowSurface(mInstance.InstanceHandle, mWindow, nullptr, &surface);
+	HWND hwnd = glfwGetWin32Window(mWindow);
 
-    mSurface = surface;
+    THROW_IF_FAILED(
+        mFactory->CreateSwapChainForHwnd(mCommandQueue.Get(), hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1));
+    THROW_IF_FAILED(mFactory->MakeWindowAssociation(hwnd, DXGI_MWA_NO_ALT_ENTER));
 
-    // Pick the physical device to use
-    builder.PhysicalDeviceFeatures12.scalarBlockLayout = true;
-    builder.PhysicalDeviceFeatures12.hostQueryReset = true;
-    mPhysicalDevice = builder.PickPhysicalDevice(mSurface);
+    swapChain1.As(&mSwapchain);
 
-    // Create the logical device
-    mDevice = builder.CreateDevice();
+    mBackBufferIndex = mSwapchain->GetCurrentBackBufferIndex();
 
-    // Get the queues for the logical device
-    mQueues = builder.GetQueues();
+    // Create Command Allocators
+    for (UINT32 i = 0; i < 2; i++)
+    {
+        THROW_IF_FAILED(
+            mDXDevice->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT, IID_PPV_ARGS(&mCommandAllocators[i])));
+    }
 
-    assert(mQueues.GraphicsQueue && "Graphics queue is null");
+    // Create Command List
+    THROW_IF_FAILED(mDXDevice->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE,
+        IID_PPV_ARGS(&mCommandList)));
 
-    // This code creates a swapchain with a particular format and dimensions.
+    // Create RTV Descriptor Heap
+    D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
+    rtvHeapDesc.NumDescriptors = 2;
+    rtvHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_RTV;
+    THROW_IF_FAILED(mDXDevice->CreateDescriptorHeap(&rtvHeapDesc, IID_PPV_ARGS(&mRTVHeap)));
 
-    mSwapchainBuilder = vr::SwapchainBuilder(mDevice, mPhysicalDevice, mSurface, mQueues.GraphicsIndex, mQueues.PresentIndex);
-    mSwapchainBuilder.Height = mWindowWidth;
-    mSwapchainBuilder.Width = mWindowHeight;
-    mSwapchainBuilder.BackBufferCount = 2;
-    mSwapchainBuilder.ImageUsage = vk::ImageUsageFlagBits::eTransferDst;
-    mSwapchainBuilder.DesiredFormat = vk::Format::eB8G8R8A8Unorm;
-    mSwapchainResources = mSwapchainBuilder.BuildSwapchain();
+    mRTVDescriptorSize = mDXDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-    // Create command pools
-    vk::CommandPoolCreateInfo poolInfo = {};
-    poolInfo.queueFamilyIndex = mQueues.GraphicsIndex;
-    poolInfo.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer; // release command buffers back to pool
-    mGraphicsPool = mDevice.createCommandPool(poolInfo);
+    CD3DX12_CPU_DESCRIPTOR_HANDLE rtvHandle(mRTVHeap->GetCPUDescriptorHandleForHeapStart());
+    for (UINT32 i = 0; i < 2; i++)
+    {
+        THROW_IF_FAILED(mSwapchain->GetBuffer(i, IID_PPV_ARGS(&mBackBuffers[i])));
+        mDXDevice->CreateRenderTargetView(mBackBuffers[i].Get(), nullptr, rtvHandle);
+        rtvHandle.Offset(1, mRTVDescriptorSize);
+    }
 
-    mMaxFramesInFlight = static_cast<uint32_t>(mSwapchainResources.SwapchainImageViews.size());
+    // Create Fence
+    THROW_IF_FAILED(mDXDevice->CreateFence(0, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&mFence)));
+    mFenceEvent = CreateEvent(nullptr, FALSE, FALSE, nullptr);
+    if (mFenceEvent == nullptr)
+    {
+        THROW_IF_FAILED(HRESULT_FROM_WIN32(GetLastError()));
+    }
 
-    // create command buffers
-    vk::CommandBufferAllocateInfo allocInfo = {};
-    allocInfo.commandPool = mGraphicsPool;
-    allocInfo.level = vk::CommandBufferLevel::ePrimary;
-    allocInfo.commandBufferCount = 2;
+	mDevice = std::make_unique<DXR::Device>(mDXDevice, mAdapter);
 
-    // Create semaphores
-    vk::SemaphoreCreateInfo semaphoreInfo = {};
-    // create semaphores for present
-    mRenderSemaphore = mDevice.createSemaphore(semaphoreInfo);
-    mPresentSemaphore = mDevice.createSemaphore(semaphoreInfo);
+	CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, mWidth, mHeight, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    mOutputImage = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT);
+	desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	mAccumulationImage = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT);
 
-    // Create fences
-    vk::FenceCreateInfo fenceInfo = {};
-    fenceInfo.flags = vk::FenceCreateFlagBits::eSignaled;
-    mRenderFence = mDevice.createFence(fenceInfo);
+	desc = CD3DX12_RESOURCE_DESC::Buffer(1024, D3D12_RESOURCE_FLAG_NONE);
 
-    mVRDev = new vr::VulrayDevice(mInstance.InstanceHandle, mDevice, mPhysicalDevice);
+	mConstantBuffer = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_DEFAULT);
+    mStagingBuffers[0] = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_UPLOAD);
+    mStagingBuffers[1] = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_UPLOAD);
+	mStagingDatas[0] = (CHAR*)mDevice->MapAllocationForWrite(mStagingBuffers[0]);
+	mStagingDatas[1] = (CHAR*)mDevice->MapAllocationForWrite(mStagingBuffers[1]);
 
-    mRTRenderCmd = mDevice.allocateCommandBuffers(allocInfo);
+	// Create Resource Heap
+	D3D12_DESCRIPTOR_HEAP_DESC resourceHeapDesc = {};
+	resourceHeapDesc.NodeMask = 0;
+	resourceHeapDesc.NumDescriptors = 1000;
+	resourceHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+	resourceHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+
+	THROW_IF_FAILED(mDXDevice->CreateDescriptorHeap(&resourceHeapDesc, IID_PPV_ARGS(&mResourceHeap)));
+	mResourceDescriptorSize = mDXDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+
+    CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(mResourceHeap->GetCPUDescriptorHandleForHeapStart());
+
+    D3D12_CONSTANT_BUFFER_VIEW_DESC cbvDesc = {};
+    cbvDesc.BufferLocation = mConstantBuffer->GetResource()->GetGPUVirtualAddress();
+    cbvDesc.SizeInBytes = 1024;
+    mDXDevice->CreateConstantBufferView(&cbvDesc, cpuHandle);
+
+    cpuHandle.Offset(1, mResourceDescriptorSize);
+
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uavDesc = {};
+    uavDesc.ViewDimension = D3D12_UAV_DIMENSION_TEXTURE2D;
+    uavDesc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    uavDesc.Texture2D.MipSlice = 0;
+    uavDesc.Texture2D.PlaneSlice = 0;
+    mDXDevice->CreateUnorderedAccessView(mOutputImage->GetResource(), nullptr, &uavDesc, cpuHandle);
+
+    cpuHandle.Offset(1, mResourceDescriptorSize);
+
+	uavDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+	mDXDevice->CreateUnorderedAccessView(mAccumulationImage->GetResource(), nullptr, &uavDesc, cpuHandle);
 }
 
-void Application::Update(vk::CommandBuffer renderCmd)
-{
-}
 
-void Application::Start()
-{
-}
-
-void Application::Stop()
-{
-}
 
 void Application::BeginFrame()
 {
+    // Acquire the next image
+	mBackBufferIndex = mSwapchain->GetCurrentBackBufferIndex();
+
+	// Wait for the previous frame to finish
+	if (mFence->GetCompletedValue() < mFrameFenceValues[mBackBufferIndex])
+	{
+		THROW_IF_FAILED(mFence->SetEventOnCompletion(mFrameFenceValues[mBackBufferIndex], mFenceEvent));
+		WaitForSingleObject(mFenceEvent, INFINITE);
+	}
+
+    UpdateCamera();
 
     DeltaTime = mFrameTimer.Endd();
     mFrameTimer.Start();
-    // Acquire the next image
-    auto result = mDevice.acquireNextImageKHR(mSwapchainResources.SwapchainHandle, UINT64_MAX, mRenderSemaphore, nullptr, &mCurrentSwapchainImage);
 
-    if (mOldSwapchain)
-    {
-        mDevice.destroySwapchainKHR(mOldSwapchain);
-        mOldSwapchain = nullptr;
-    }
+	// Reset the command allocator
+	THROW_IF_FAILED(mCommandAllocators[mBackBufferIndex]->Reset());
+
+	// Reset the command list
+	THROW_IF_FAILED(mCommandList->Reset(mCommandAllocators[mBackBufferIndex].Get(), nullptr));
+
+	// Copy the data to the constant buffer
+	mCommandList->CopyBufferRegion(mConstantBuffer->GetResource(), 0, mStagingBuffers[mBackBufferIndex]->GetResource(), 0, 1024);
+
+	ID3D12DescriptorHeap* ppHeaps[] = { mResourceHeap.Get() };
+	mCommandList->SetDescriptorHeaps(1, ppHeaps);
 }
 
-void Application::WaitForRendering()
+void Application::EndFrame()
 {
+    mPassiveFrameCount++;
+    mFrameCount++;
 
-}
+	// Close the command list
+	THROW_IF_FAILED(mCommandList->Close());
 
-void Application::Present(vk::CommandBuffer commandBuffer)
-{
-    // Wait for the fence to be signaled by the GPU
-    auto _ = mDevice.waitForFences(mRenderFence, true, 1000000000);
-    // Reset the fence
-    mDevice.resetFences(mRenderFence);
+	// Execute the command list
+	ID3D12CommandList* ppCommandLists[] = { mCommandList.Get() };
+	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
 
-    // reset the command buffer
-    uint32_t lastCmdIdx = mRTRenderCmdIndex == 0 ? 1 : 0;
-    mRTRenderCmd[lastCmdIdx].reset(vk::CommandBufferResetFlagBits::eReleaseResources);
+	// Present the image
+	THROW_IF_FAILED(mSwapchain->Present(0, mTearingSupport ? DXGI_PRESENT_ALLOW_TEARING : 0));
 
-    vk::PipelineStageFlags waitStage = vk::PipelineStageFlagBits::eColorAttachmentOutput;
+	// Signal the fence
+	THROW_IF_FAILED(mCommandQueue->Signal(mFence.Get(), ++mFenceValue));
 
-    auto qSubmitInfo = vk::SubmitInfo()
-                           .setPWaitDstStageMask(&waitStage)
-                           .setCommandBufferCount(1)
-                           .setPCommandBuffers(&commandBuffer)
-                           .setWaitSemaphoreCount(1)
-                           .setPWaitSemaphores(&mRenderSemaphore)
-                           .setSignalSemaphoreCount(1)
-                           .setPSignalSemaphores(&mPresentSemaphore);
+	// Store the fence value to wait for
+	mFrameFenceValues[mBackBufferIndex] = mFenceValue;
 
-    _ = mQueues.GraphicsQueue.submit(1, &qSubmitInfo, mRenderFence);
-
-    auto presentInfo = vk::PresentInfoKHR()
-                           .setWaitSemaphoreCount(1)
-                           .setPWaitSemaphores(&mPresentSemaphore)
-                           .setSwapchainCount(1)
-                           .setPSwapchains(&mSwapchainResources.SwapchainHandle)
-                           .setPImageIndices(&mCurrentSwapchainImage);
-
-    // Pass a pointer, not a reference, because Vulkan-hpp EnhancedMode is on, which throws an error if result is not vk::Result::eSuccess
-    // the results can be vk::Result::eSuccess, vk::Result::eSuboptimalKHR or vk::Result::eErrorOutOfDateKHR
-    auto result = mQueues.PresentQueue.presentKHR(&presentInfo);
-
-    mQueues.GraphicsQueue.waitIdle();
-
-    if (result == vk::Result::eErrorOutOfDateKHR)
-    {
-        HandleResize();
-    }
-    else if (result == vk::Result::eSuboptimalKHR)
-    {
-        HandleResize();
-    }
-    else if (result != vk::Result::eSuccess)
-    {
-        throw std::runtime_error("Unknown result when presenting swapchain: " + vk::to_string(result));
-    }
-    else
-    {
-        mPassiveFrameCount++;
-        mFrameCount++;
-    }
-
-    // new image index
-    mRTRenderCmdIndex = mRTRenderCmdIndex == 0 ? 1 : 0;
-
-
-}
-
-void Application::CreateBaseResources()
-{
-    // Create an image to render to
-    auto imageCreateInfo = vk::ImageCreateInfo()
-                               .setImageType(vk::ImageType::e2D)
-                               .setFormat(vk::Format::eR32G32B32A32Sfloat)
-                               .setExtent(vk::Extent3D(mSwapchainResources.SwapchainExtent, 1))
-                               .setMipLevels(1)
-                               .setArrayLayers(1)
-                               .setSamples(vk::SampleCountFlagBits::e1)
-                               .setTiling(vk::ImageTiling::eOptimal)
-                               .setUsage(vk::ImageUsageFlagBits::eStorage | vk::ImageUsageFlagBits::eTransferSrc)
-                               .setSharingMode(vk::SharingMode::eExclusive)
-                               .setInitialLayout(vk::ImageLayout::eUndefined);
-
-    // create the image with dedicated memory
-    mOutputImageBuffer = mVRDev->CreateImage(imageCreateInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-    mAccumImageBuffer = mVRDev->CreateImage(imageCreateInfo, VMA_ALLOCATION_CREATE_DEDICATED_MEMORY_BIT);
-
-    // create a view for the image
-    auto viewCreateInfo = vk::ImageViewCreateInfo()
-                              .setImage(mOutputImageBuffer.Image)
-                              .setViewType(vk::ImageViewType::e2D)
-                              .setFormat(vk::Format::eR32G32B32A32Sfloat)
-                              .setSubresourceRange(vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1));
-
-    mOutputImage.View = mDevice.createImageView(viewCreateInfo);
-    viewCreateInfo.setImage(mAccumImageBuffer.Image);
-    mAccumImage.View = mDevice.createImageView(viewCreateInfo);
-
-    // create a uniform buffer
-    uint32_t uniformBufferSize = sizeof(float) * 4 * 4 * 2; // two 4x4 matrix
-    uniformBufferSize += sizeof(float) * 4;                 // pass time, and 3 floats for padding or whatever else in the future
-
-    mUniformBuffer = mVRDev->CreateBuffer(
-        uniformBufferSize,
-        vk::BufferUsageFlagBits::eUniformBuffer,                 // its a uniform buffer
-        VMA_ALLOCATION_CREATE_HOST_ACCESS_SEQUENTIAL_WRITE_BIT); // we will be writing to this buffer on the CPU
 }
 
 void Application::UpdateCamera()
@@ -253,7 +245,7 @@ void Application::UpdateCamera()
     glfwGetCursorPos(mWindow, &mMousePos.x, &mMousePos.y);
 
     // normalize the mouse position
-    glm::dvec2 resDividend = glm::dvec2(mSwapchainResources.SwapchainExtent.width, mSwapchainResources.SwapchainExtent.height);
+    glm::dvec2 resDividend = glm::dvec2(mWidth, mHeight);
     glm::dvec2 delta = (mMousePos - lastMousePos) / resDividend;
 
     if (glfwGetMouseButton(mWindow, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS)
@@ -297,7 +289,7 @@ void Application::UpdateCamera()
 
     glm::mat4 view = mCamera.GetViewMatrix();
 
-    mCamera.AspectRatio = ((float)mRenderWidth) / ((float)mRenderHeight);
+    mCamera.AspectRatio = ((float)mWidth) / ((float)mHeight);
     glm::mat4 proj = mCamera.GetProjectionMatrix();
 
     // update the view matrix
@@ -306,107 +298,42 @@ void Application::UpdateCamera()
     float time = glfwGetTime();
 
     uint32_t uniformExtraInfo[4];
-    uniformExtraInfo[0] = *(uint32_t *)&time; // type punning
-    uniformExtraInfo[1] = mPassiveFrameCount;
+    uniformExtraInfo[0] = mPassiveFrameCount;
+    uniformExtraInfo[1] = *(uint32_t *)&time; // type punning
 
-    char *mapped = (char *)mVRDev->MapBuffer(mUniformBuffer);
-    memcpy(mapped, mats, sizeof(glm::mat4) * 2);
-    memcpy(mapped + sizeof(glm::mat4) * 2, uniformExtraInfo, sizeof(uint32_t) * 4);
-    mVRDev->UnmapBuffer(mUniformBuffer);
+	CHAR* data = mStagingDatas[mBackBufferIndex];
+
+	memcpy(data, mats, sizeof(mats));
+	memcpy(data + sizeof(mats), uniformExtraInfo, sizeof(uniformExtraInfo));
 }
 
-void Application::HandleResize()
+void Application::CleanUp()
 {
-    // save the old swapchain, because we need to destroy it later after all operations on it are finished
-    mOldSwapchain = mSwapchainResources.SwapchainHandle;
-    // Destroy the old swapchain resources, but not the swapchain itself
-    vr::SwapchainBuilder::DestroySwapchainResources(mDevice, mSwapchainResources);
-
-    mSwapchainResources = mSwapchainBuilder.BuildSwapchain(mOldSwapchain);
-
-    // get the new framebuffer size
-    int width, height;
-    glfwGetFramebufferSize(mWindow, &width, &height);
-    mWindowWidth = width;
-    mWindowHeight = height;
-
-    // update the camera aspect ratio
-    mCamera.AspectRatio = (float)mRenderWidth / (float)mRenderHeight;
-
-    mPassiveFrameCount = 0;
+    // Wait for the GPU to finish
+    mCommandQueue->Signal(mFence.Get(), ++mFenceValue);
+    mFence->SetEventOnCompletion(mFenceValue, mFenceEvent);
+    WaitForSingleObject(mFenceEvent, INFINITE);
 }
 
-void Application::BlitImage(vk::CommandBuffer renderCmd)
-{
-    mVRDev->TransitionImageLayout(mSwapchainResources.SwapchainImages[mCurrentSwapchainImage],
-                                  vk::ImageLayout::eUndefined,
-                                  vk::ImageLayout::eTransferDstOptimal,
-                                  vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1),
-                                  renderCmd);
-
-    mVRDev->TransitionImageLayout(mOutputImageBuffer.Image,
-                                  vk::ImageLayout::eGeneral,
-                                  vk::ImageLayout::eTransferSrcOptimal,
-                                  vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1),
-                                  renderCmd);
-
-    renderCmd.blitImage(
-        mOutputImageBuffer.Image, vk::ImageLayout::eTransferSrcOptimal,
-        mSwapchainResources.SwapchainImages[mCurrentSwapchainImage], vk::ImageLayout::eTransferDstOptimal,
-        vk::ImageBlit(vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
-                      {vk::Offset3D(0, 0, 0), vk::Offset3D(mOutputImageBuffer.Width, mOutputImageBuffer.Height, 1)},
-                      vk::ImageSubresourceLayers(vk::ImageAspectFlagBits::eColor, 0, 0, 1),
-                      {vk::Offset3D(0, 0, 0), vk::Offset3D(mSwapchainResources.SwapchainExtent.width, mSwapchainResources.SwapchainExtent.height, 1)}),
-        vk::Filter::eLinear);
-
-    mVRDev->TransitionImageLayout(mOutputImageBuffer.Image,
-                                  vk::ImageLayout::eTransferSrcOptimal,
-                                  vk::ImageLayout::eGeneral,
-                                  vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1),
-                                  renderCmd);
-
-    mVRDev->TransitionImageLayout(mSwapchainResources.SwapchainImages[mCurrentSwapchainImage],
-                                  vk::ImageLayout::eTransferDstOptimal,
-                                  vk::ImageLayout::ePresentSrcKHR,
-                                  vk::ImageSubresourceRange(vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1),
-                                  renderCmd);
-}
 void Application::Run()
 {
+	Start();
+
     while (!glfwWindowShouldClose(mWindow))
     {
         BeginFrame();
-        Update(mRTRenderCmd[mRTRenderCmdIndex]);
+        Update();
         glfwPollEvents();
+		EndFrame();
     }
+
+    CleanUp();
+
+	Stop();
 }
 
 Application::~Application()
 {
-    if (mUniformBuffer.Buffer)
-        mVRDev->DestroyBuffer(mUniformBuffer);
-    if (mOutputImageBuffer.Image)
-        mVRDev->DestroyImage(mOutputImageBuffer);
-    if (mAccumImageBuffer.Image)
-        mVRDev->DestroyImage(mAccumImageBuffer);
-
-    // Clean up
-    delete mVRDev;
-
-    glfwDestroyWindow(mWindow);
-    glfwTerminate();
-
-    mDevice.destroyImageView(mOutputImage.View);
-    mDevice.destroyImageView(mAccumImage.View);
-
-    mDevice.destroyFence(mRenderFence);
-    mDevice.destroySemaphore(mRenderSemaphore);
-    mDevice.destroySemaphore(mPresentSemaphore);
-    mDevice.destroyCommandPool(mGraphicsPool);
-
-    vr::SwapchainBuilder::DestroySwapchain(mDevice, mSwapchainResources);
-    mDevice.destroy();
-    mInstance.InstanceHandle.destroySurfaceKHR(mSurface);
-
-    vr::InstanceWrapper::DestroyInstance(mInstance);
+	glfwDestroyWindow(mWindow);
+	glfwTerminate();
 }

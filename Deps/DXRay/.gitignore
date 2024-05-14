@@ -1,0 +1,42 @@
+# Visual Studio
+out/
+build/
+.vs/
+.vscode/
+CppProperties.json
+
+# Exclude Agility SDK that is downloaded by CMake
+Deps/AgilitySDK
+
+# Prerequisites
+*.d
+
+# Compiled Object files
+*.slo
+*.lo
+*.o
+*.obj
+
+# Precompiled Headers
+*.gch
+*.pch
+
+# Compiled Dynamic libraries
+*.so
+*.dylib
+*.dll
+
+# Fortran module files
+*.mod
+*.smod
+
+# Compiled Static libraries
+*.lai
+*.la
+*.a
+*.lib
+
+# Executables
+*.exe
+*.out
+*.app

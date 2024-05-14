@@ -1,9 +1,12 @@
 #pragma once
 
-#include <vulkan/vulkan.h>
+#define GLFW_EXPOSE_NATIVE_WIN32
 #include <GLFW/glfw3.h>
-#include "Vulray/Vulray.h"
-#include "Vulray/VulkanBuilder/VulkanBuilder.h"
+#include <GLFW/glfw3native.h>
+
+#include "DXRay/DXRay.h"
+
+using namespace Microsoft::WRL;
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -12,6 +15,12 @@
 #include <iostream>
 #include <vector>
 #include <string>
+
+#if defined(_DEBUG)
+#define THROW_IF_FAILED(hr) if (FAILED(hr)) { __debugbreak(); }
+#else
+#define THROW_IF_FAILED(hr) hr;
+#endif
 
 
 #include "SimpleTimer.h"
