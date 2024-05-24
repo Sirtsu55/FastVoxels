@@ -15,6 +15,7 @@ using namespace Microsoft::WRL;
 #include <iostream>
 #include <vector>
 #include <string>
+#include <iomanip>
 
 #if defined(_DEBUG)
 #define THROW_IF_FAILED(hr) if (FAILED(hr)) { __debugbreak(); }

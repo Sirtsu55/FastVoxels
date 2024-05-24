@@ -21,7 +21,6 @@ struct Payload
     bool TerminateRay;
 };
 
-RaytracingAccelerationStructure rs;
 
 struct SceneInfo
 {
@@ -30,9 +29,7 @@ struct SceneInfo
     float4 otherInfo;
 };
 
-StructuredBuffer<AABB> aabbBuffer;
-RWTexture2D<float4> outImage;
-RWTexture2D<float4> accumImage;
+RaytracingAccelerationStructure rs : register(t0);
 
 ProceduralPrimitiveHitGroup AABBHitGroup =
 {
@@ -52,3 +49,8 @@ RaytracingPipelineConfig PipelineConfig =
     1
 };
 
+GlobalRootSignature RootSig =
+{
+    "RootFlags( CBV_SRV_UAV_HEAP_DIRECTLY_INDEXED )," // Root flags
+    "SRV( t0 ),"                                          // Acceleration structure
+};

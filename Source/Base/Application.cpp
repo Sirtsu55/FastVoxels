@@ -35,16 +35,27 @@ Application::Application()
     mFactory->EnumAdapterByGpuPreference(0, DXGI_GPU_PREFERENCE_HIGH_PERFORMANCE, IID_PPV_ARGS(&mAdapter));
 
     // Create Device
-    THROW_IF_FAILED(D3D12CreateDevice(mAdapter.Get(), D3D_FEATURE_LEVEL_12_2, IID_PPV_ARGS(&mDXDevice)));
 
-    D3D12_FEATURE_DATA_D3D12_OPTIONS16 options16 = {};
-    bool GPUUploadHeapSupported = false;
+	if (FAILED(D3D12CreateDevice(mAdapter.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&mDXDevice))))
+	{
+		MessageBoxW(NULL, L"Failed to create device", L"Error", MB_OK); // Displays a message box with the title "Error" and the message "Failed to create device
+		std::exit(1);
+	}
 
-    if (!(SUCCEEDED(mDXDevice->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS16, &options16, sizeof(options16))) && options16.GPUUploadHeapSupported))
+    CD3DX12FeatureSupport featureSupport;
+    featureSupport.Init(mDXDevice.Get());
+
+	if (!featureSupport.GPUUploadHeapSupported())
 	{
 		MessageBoxW(NULL, L"GPU Upload Heap is not supported on this device", L"Error", MB_OK);
 		std::exit(1);
 	}
+
+    if (featureSupport.RaytracingTier() == D3D12_RAYTRACING_TIER_NOT_SUPPORTED)
+	{
+		MessageBoxW(NULL, L"Raytracing is not supported on this device", L"Error", MB_OK);
+		std::exit(1);
+    }
 
     // Enable Info Queue
 #if defined(_DEBUG)
@@ -225,7 +236,7 @@ void Application::EndFrame()
 
 	// Execute the command list
 	ID3D12CommandList* ppCommandLists[] = { mCommandList.Get() };
-	mCommandQueue->ExecuteCommandLists(_countof(ppCommandLists), ppCommandLists);
+	mCommandQueue->ExecuteCommandLists(1, ppCommandLists);
 
 	// Present the image
 	THROW_IF_FAILED(mSwapchain->Present(0, mTearingSupport ? DXGI_PRESENT_ALLOW_TEARING : 0));
