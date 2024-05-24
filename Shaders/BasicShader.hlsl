@@ -22,7 +22,7 @@ void rgen()
 
     for (int i = 0; i < MAX_BOUNCES; i++)
     {
-        TraceRay(rs, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, rayDesc, payload);
+        TraceRay(rs, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff, 0, 0, 0, rayDesc, payload);
       
         if (payload.TerminateRay)   
             break;
@@ -65,14 +65,18 @@ void chit(inout Payload p, in BoxHitAttributes attribs)
 {
     ConstantBuffer<SceneInfo> sceneInfo = ResourceDescriptorHeap[0];
     
-    float3 Color = PrimitiveIndex() / 400.0;
-
+    
     float3 v = WorldRayDirection();
     float time = asfloat(sceneInfo.otherInfo.y);
     uint seed = asint(time) * asint(v.x) * asint(v.y) * asint(v.z);
 
 	// Sample a new ray direction
     float2 rand = float2(NextRandomFloat(seed), NextRandomFloat(seed));
+    
+    uint color = Random(PrimitiveIndex());
+    
+    float3 Color = float3((color & 0xFF) / 255.0, ((color >> 8) & 0xFF) / 255.0, ((color >> 16) & 0xFF) / 255.0);
+    
 
     p.HitColor *= Color;
     p.HitLight = 1.0;
