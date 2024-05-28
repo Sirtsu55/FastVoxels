@@ -103,10 +103,8 @@ void BoxIntersections::CreateQueryPool()
 
 void BoxIntersections::CreateAS()
 {
-
     std::vector<glm::vec3> positions = {};
     std::vector<glm::mat4> transforms = {};
-
 
     transforms.push_back(glm::transpose(glm::mat4(1.0f)));
 

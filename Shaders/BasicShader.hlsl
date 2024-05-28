@@ -17,7 +17,7 @@ void rgen()
 
     for (int i = 0; i < MAX_BOUNCES; i++)
     {
-        TraceRay(rs, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff, 0, 0, 0, rayDesc, payload);
+        TraceRay(rs, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, rayDesc, payload);
       
         if (payload.TerminateRay)      
             break;
