@@ -1,6 +1,6 @@
 #include "Shaders/Common/Common.hlsl"
 
-#define MAX_BOUNCES 10
+#define MAX_BOUNCES 8
 
 [shader("raygeneration")]
 void rgen()
@@ -22,8 +22,8 @@ void rgen()
 
     for (int i = 0; i < MAX_BOUNCES; i++)
     {
-        TraceRay(rs, RAY_FLAG_FORCE_OPAQUE | RAY_FLAG_ACCEPT_FIRST_HIT_AND_END_SEARCH, 0xff, 0, 0, 0, rayDesc, payload);
-      
+        TraceRay(rs, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, rayDesc, payload);
+        
         if (payload.TerminateRay)   
             break;
 
@@ -52,19 +52,65 @@ void rgen()
     outImage[int2(LaunchID.xy)] = float4(FinalColor, 0.0);
 }
 
+float max_component(float3 v)
+{
+    return max(max(v.x, v.y), v.z);
+}
+
+float min_component(float3 v)
+{
+    return min(min(v.x, v.y), v.z);
+}
+
+float slabs(float3 p0, float3 p1, float3 rayOrigin, float3 invRaydir)
+{
+    float3 t0 = (p0 - rayOrigin) * invRaydir;
+    float3 t1 = (p1 - rayOrigin) * invRaydir;
+    float3 tmin = min(t0, t1), tmax = max(t0, t1);
+  
+    float min = max_component(tmin);
+    float max = min_component(tmax);
+    
+    return min <= max ? min : -1.0f;
+}
+
 [shader("intersection")]
 void isect()
 {
     BoxHitAttributes attribs;
+    StructuredBuffer<AABB> aabbBuffer = ResourceDescriptorHeap[3];
 
-    ReportHit(1, 0, attribs);
+    AABB box = aabbBuffer[PrimitiveIndex()];
+    
+    float t = slabs(box.Min, box.Max, ObjectRayOrigin(), rcp(ObjectRayDirection()));
+    
+    if (t == -1.0f)
+        return;
+    
+    // Figure out the normal
+    float3 boxMid = (box.Min + box.Max) / 2.0;
+    float3 boxSize = box.Max - box.Min;
+    
+    float3 hitPointLocal = (ObjectRayOrigin() + t * ObjectRayDirection()) - boxMid;
+     
+    float3 normal = float3(0.0, 0.0, 0.0);
+    
+    if (abs(hitPointLocal.x) > abs(hitPointLocal.y) && abs(hitPointLocal.x) > abs(hitPointLocal.z))
+        normal.x = sign(hitPointLocal.x);
+    else if (abs(hitPointLocal.y) > abs(hitPointLocal.x) && abs(hitPointLocal.y) > abs(hitPointLocal.z))
+        normal.y = sign(hitPointLocal.y);
+    else
+        normal.z = sign(hitPointLocal.z);
+    
+    attribs.Normal = mul(float4(normal, 0.0), ObjectToWorld3x4()).xyz;
+    
+    ReportHit(t, 0, attribs);
 }
 
 [shader("closesthit")]
 void chit(inout Payload p, in BoxHitAttributes attribs)
 {
     ConstantBuffer<SceneInfo> sceneInfo = ResourceDescriptorHeap[0];
-    
     
     float3 v = WorldRayDirection();
     float time = asfloat(sceneInfo.otherInfo.y);
@@ -77,10 +123,9 @@ void chit(inout Payload p, in BoxHitAttributes attribs)
     
     float3 Color = float3((color & 0xFF) / 255.0, ((color >> 8) & 0xFF) / 255.0, ((color >> 16) & 0xFF) / 255.0);
     
-
     p.HitColor *= Color;
     p.HitLight = 1.0;
-    p.TerminateRay = true;
+    p.TerminateRay = false;
     p.NextDir = SampleCosineHemisphere(attribs.Normal, rand);
     p.HitLoc = GetWorldIntersection();
 }

@@ -267,16 +267,6 @@ void Application::UpdateCamera()
             mPassiveFrameCount = 0;
         }
     }
-    if (glfwGetKey(mWindow, GLFW_KEY_Q) == GLFW_PRESS)
-    {
-        mCamera.Rotate(0, 0, DeltaTime);
-        mPassiveFrameCount = 0;
-    }
-    if (glfwGetKey(mWindow, GLFW_KEY_E) == GLFW_PRESS)
-    {
-        mCamera.Rotate(0, 0, -DeltaTime);
-        mPassiveFrameCount = 0;
-    }
     if (glfwGetKey(mWindow, GLFW_KEY_W) == GLFW_PRESS)
     {
         mCamera.MoveForward(DeltaTime * MovementSpeed);

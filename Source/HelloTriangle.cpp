@@ -231,6 +231,19 @@ void BoxIntersections::Start()
 	UINT64 frequency;
 	THROW_IF_FAILED(mCommandQueue->GetTimestampFrequency(&frequency));
 	mTimestampFrequency = frequency;
+	
+	CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(mResourceHeap->GetCPUDescriptorHandleForHeapStart());
+	cpuHandle.Offset(3, mResourceDescriptorSize);
+
+	D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+	srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+	srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+	srvDesc.Buffer.FirstElement = 0;
+	srvDesc.Buffer.NumElements = positions.size();
+	srvDesc.Buffer.StructureByteStride = sizeof(D3D12_RAYTRACING_AABB);
+	srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
+
+	mDXDevice->CreateShaderResourceView(mAABBBuffer->GetResource(), &srvDesc, cpuHandle);
 }
 
 void BoxIntersections::Update()

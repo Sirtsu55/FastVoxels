@@ -148,7 +148,7 @@ namespace DXR
         D3D12_RESOURCE_DESC resDesc = CD3DX12_RESOURCE_DESC::Buffer(
             numInstances * sizeof(D3D12_RAYTRACING_INSTANCE_DESC), D3D12_RESOURCE_FLAG_NONE);
 
-        return AllocateResource(resDesc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, heapType);
+        return AllocateResource(resDesc, D3D12_RESOURCE_STATE_COMMON, heapType);
     }
 
 } // namespace DXR

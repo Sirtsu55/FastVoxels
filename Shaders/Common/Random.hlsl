@@ -6,7 +6,7 @@
 
 uint Random(uint state)
 {
-    state ^= state << 13;
+    state ^= state << 13; 
     state ^= state >> 7;
     state ^= state << 17;
     return state;

@@ -23,7 +23,7 @@ namespace DXR
         auto tableBufDesc = CD3DX12_RESOURCE_DESC::Buffer(rgenAlignedSize + missAlignedSize + hitGroupAlignedSize +
                                                           callableAlignedSize);
 
-        table.mShaderTable = AllocateResource(tableBufDesc, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, heap,
+        table.mShaderTable = AllocateResource(tableBufDesc, D3D12_RESOURCE_STATE_COMMON, heap,
                                               DMA::ALLOCATION_FLAG_NONE, D3D12_HEAP_FLAG_NONE);
 
         CHAR* pData = reinterpret_cast<CHAR*>(MapAllocationForWrite(table.mShaderTable));
