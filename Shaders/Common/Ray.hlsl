@@ -13,8 +13,3 @@ RayDesc ConstructRay(in float4x4 vInv, in float4x4 pInv)
 	rayDesc.TMax = 1000.0;
     return rayDesc;
 }
-
-float3 GetWorldIntersection()
-{
-	return WorldRayOrigin() + WorldRayDirection() * RayTCurrent();
-}

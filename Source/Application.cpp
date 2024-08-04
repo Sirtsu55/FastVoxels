@@ -1,8 +1,6 @@
 #include "Common.h"
 #include "Application.h"
 
-DXRAY_AGILITY_SDK_IMPLEMENTATION;
-
 Application::Application()
 {
     glfwInit(); // Initializes the GLFW library

@@ -50,7 +50,7 @@ protected:
 
 	HANDLE mFenceEvent = nullptr;
 
-	std::unique_ptr<DXR::Device> mDevice = nullptr;
+	std::shared_ptr<DXR::Device> mDevice = nullptr;
 
 	UINT32 mTearingSupport = 0;
 	UINT32 mBackBufferIndex = 0;

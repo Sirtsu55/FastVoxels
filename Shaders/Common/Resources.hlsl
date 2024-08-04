@@ -5,8 +5,9 @@ struct AABB
     float3 Max;
 };
 
-struct BoxHitAttributes
+struct HitInfo
 {
+    float T;
     float3 Normal;
 };
 
@@ -41,7 +42,7 @@ ProceduralPrimitiveHitGroup AABBHitGroup =
 RaytracingShaderConfig ShaderConfig =
 {
     44,
-    16
+    24
 };
 
 RaytracingPipelineConfig PipelineConfig =

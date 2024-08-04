@@ -1,52 +1,10 @@
-#include "Base/Common.h"
-#include "Base/ShaderCompiler.h"
-#include "Base/Application.h"
-#include "Base/FileRead.h"
+#include "Common.h"
+#include "VoxelApp.h"
+#include "FileRead.h"
 
-#define OGT_VOX_IMPLEMENTATION
-#include "Base/ogt_vox.h"
+#include "ogt_vox.h"
 
-struct PerformanceData
-{
-	DOUBLE ApplicationTime;
-	DOUBLE PerformanceTime;
-};
-
-class BoxIntersections : public Application
-{
-public:
-    virtual void Start() override;
-    virtual void Update() override;
-    virtual void Stop() override;
-
-private:
-	void WritePerformanceData();
-
-public:
-    ShaderCompiler mShaderCompiler;
-
-	ComPtr<DMA::Allocation> mBLAS;
-	ComPtr<DMA::Allocation> mTLAS;
-
-	DXR::ShaderTable mShaderTable;
-	ComPtr<ID3D12StateObject> mPipeline;
-	ComPtr<ID3D12RootSignature> mRootSig;
-
-	ComPtr<DMA::Allocation> mAABBBuffer;
-	ComPtr<DMA::Allocation> mInstanceBuffer;
-
-	ComPtr<ID3D12QueryHeap> mQueryHeap;
-	ComPtr<DMA::Allocation> mQueryOutput;
-	UINT64* mQueryOutputData = nullptr;
-
-	DOUBLE mTimestampFrequency = 0.0;
-
-	std::vector<PerformanceData> mPerformanceData;
-    std::ofstream mPerformanceFile;
-};
-
-
-void BoxIntersections::Start()
+void VoxelApp::Start()
 {
 	// Write the header to the file
 	mPerformanceData.reserve(100);
@@ -86,7 +44,7 @@ void BoxIntersections::Start()
 
 	// Create AS
 	std::vector<uint8_t> rawVox;
-	FileRead("Assets/cars.vox", rawVox);
+	FileRead("Assets/CountrySide_Source.vox", rawVox);
 	auto voxScene = ogt_vox_read_scene(rawVox.data(), rawVox.size());
 
 	std::vector<glm::vec3> positions = {};
@@ -96,8 +54,7 @@ void BoxIntersections::Start()
 		auto& instance = voxScene->instances[i];
 		auto& model = voxScene->models[instance.model_index];
 
-		glm::mat4 transform = glm::make_mat4(&instance.transform.m00);
-		transform = glm::transpose(transform);
+		glm::mat4 transform = glm::transpose(glm::make_mat4(&instance.transform.m00));
 
 		uint32_t sizeX = model->size_x;
 		uint32_t sizeY = model->size_y;
@@ -112,7 +69,7 @@ void BoxIntersections::Start()
 				{
 					if (model->voxel_data[x + y * sizeX + z * sizeX * sizeY] != 0)
 					{
-						auto pos = transform * glm::vec4(x, y, z, 1.0f);
+						auto pos = transform * glm::vec4(x, z, y, 1.0f);
 
 						positions.push_back(glm::vec3(pos));
 					}
@@ -246,7 +203,7 @@ void BoxIntersections::Start()
 	mDXDevice->CreateShaderResourceView(mAABBBuffer->GetResource(), &srvDesc, cpuHandle);
 }
 
-void BoxIntersections::Update()
+void VoxelApp::Update()
 {
 	mCommandList->SetPipelineState1(mPipeline.Get());
 
@@ -285,19 +242,21 @@ void BoxIntersections::Update()
 	if (mPerformanceData.size() >= 100)
 	{
 		WritePerformanceData();
-		mPerformanceData.clear();
 	}
 }
 
-void BoxIntersections::WritePerformanceData()
+
+
+void VoxelApp::WritePerformanceData()
 {
 	for (auto& data : mPerformanceData)
 	{
 		mPerformanceFile << data.ApplicationTime << "," << data.PerformanceTime << std::endl;
 	}
+	mPerformanceData.clear();
 }
 
-void BoxIntersections::Stop()
+void VoxelApp::Stop()
 {
 	// Write the performance data to the file
 	WritePerformanceData();
@@ -309,7 +268,7 @@ int main()
     // Create the application, start it, run it and stop it, boierplate code, eg initialising vulkan, glfw, etc
     // that is the same for every application is handled by the Application class
     // it can be found in the Base folder
-    Application* app = new BoxIntersections();
+    Application* app = new VoxelApp();
 
     app->Run();
 

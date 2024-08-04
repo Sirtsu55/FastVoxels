@@ -27,7 +27,7 @@ target_include_directories(FastVoxels PUBLIC
 
 target_link_libraries(FastVoxels glfw glm DXRay d3d12 dxcompiler dxgi)
 
-target_precompile_headers(FastVoxels PRIVATE "${PROJECT_SOURCE_DIR}/Source/Base/Common.h")
+target_precompile_headers(FastVoxels PRIVATE "${PROJECT_SOURCE_DIR}/Source/Common.h")
 
 add_custom_command(
     TARGET FastVoxels POST_BUILD

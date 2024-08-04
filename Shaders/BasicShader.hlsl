@@ -1,6 +1,6 @@
 #include "Shaders/Common/Common.hlsl"
 
-#define MAX_BOUNCES 8
+#define MAX_BOUNCES 2
 
 [shader("raygeneration")]
 void rgen()
@@ -74,43 +74,61 @@ float slabs(float3 p0, float3 p1, float3 rayOrigin, float3 invRaydir)
     return min <= max ? min : -1.0f;
 }
 
+
 [shader("intersection")]
 void isect()
 {
-    BoxHitAttributes attribs;
     StructuredBuffer<AABB> aabbBuffer = ResourceDescriptorHeap[3];
+    AABB voxel = aabbBuffer[PrimitiveIndex()];
+    
+    // Calculate the distance to the voxel
+    float3 voxelMid = (voxel.Max + voxel.Min) / 2.0;
+    float dist = distance(ObjectRayOrigin(), voxelMid);
+    
+    ReportHit(dist, 0, voxel);
+}
 
-    AABB box = aabbBuffer[PrimitiveIndex()];
-    
-    float t = slabs(box.Min, box.Max, ObjectRayOrigin(), rcp(ObjectRayDirection()));
-    
-    if (t == -1.0f)
-        return;
-    
-    // Figure out the normal
-    float3 boxMid = (box.Min + box.Max) / 2.0;
-    float3 boxSize = box.Max - box.Min;
-    
-    float3 hitPointLocal = (ObjectRayOrigin() + t * ObjectRayDirection()) - boxMid;
-     
-    float3 normal = float3(0.0, 0.0, 0.0);
-    
+float3 getNormal(float3 hitPointLocal)
+{
     if (abs(hitPointLocal.x) > abs(hitPointLocal.y) && abs(hitPointLocal.x) > abs(hitPointLocal.z))
-        normal.x = sign(hitPointLocal.x);
+        return float3(sign(hitPointLocal.x), 0.0, 0.0);
     else if (abs(hitPointLocal.y) > abs(hitPointLocal.x) && abs(hitPointLocal.y) > abs(hitPointLocal.z))
-        normal.y = sign(hitPointLocal.y);
+        return float3(0.0, sign(hitPointLocal.y), 0.0);
     else
-        normal.z = sign(hitPointLocal.z);
+        return float3(0.0, 0.0, sign(hitPointLocal.z));
+}
+
+HitInfo getHitInfo(in AABB voxel)
+{
+    HitInfo info;
     
-    attribs.Normal = mul(float4(normal, 0.0), ObjectToWorld3x4()).xyz;
+    info.T = slabs(voxel.Min, voxel.Max, ObjectRayOrigin(), rcp(ObjectRayDirection()));
     
-    ReportHit(t, 0, attribs);
+    if (info.T == -1.0f)
+    {
+        info.Normal = float3(0.0, 0.0, 0.0);
+        return info;
+    }
+    
+    // Calculate the normal
+    float3 voxelMid = (voxel.Max + voxel.Min) / 2.0;
+    info.Normal = getNormal((ObjectRayOrigin() + info.T * ObjectRayDirection()) - voxelMid);
+    
+    return info;
 }
 
 [shader("closesthit")]
-void chit(inout Payload p, in BoxHitAttributes attribs)
+void chit(inout Payload p, in AABB voxel)
 {
     ConstantBuffer<SceneInfo> sceneInfo = ResourceDescriptorHeap[0];
+    
+    HitInfo info = getHitInfo(voxel);
+    
+    if (info.T == -1.0f)
+    {
+        p.TerminateRay = true;
+        return;
+    }
     
     float3 v = WorldRayDirection();
     float time = asfloat(sceneInfo.otherInfo.y);
@@ -124,10 +142,10 @@ void chit(inout Payload p, in BoxHitAttributes attribs)
     float3 Color = float3((color & 0xFF) / 255.0, ((color >> 8) & 0xFF) / 255.0, ((color >> 16) & 0xFF) / 255.0);
     
     p.HitColor *= Color;
-    p.HitLight = 1.0;
+    p.HitLight = 0.0;
     p.TerminateRay = false;
-    p.NextDir = SampleCosineHemisphere(attribs.Normal, rand);
-    p.HitLoc = GetWorldIntersection();
+    p.NextDir = SampleCosineHemisphere(info.Normal, rand);
+    p.HitLoc = ObjectRayOrigin() + info.T * ObjectRayDirection();
 }
 
 [shader("miss")]
