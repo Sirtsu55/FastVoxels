@@ -10,7 +10,7 @@ Application::Application()
 
     mWindow = glfwCreateWindow(mWidth, mHeight, "FastVoxels", nullptr, nullptr); // Creates a window
 
-     // Create Factory
+    // Create Factory
     uint32_t dxgiFactoryFlags = 0;
 #if defined(_DEBUG)
     dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
@@ -34,25 +34,26 @@ Application::Application()
 
     // Create Device
 
-	if (FAILED(D3D12CreateDevice(mAdapter.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&mDXDevice))))
-	{
-		MessageBoxW(NULL, L"Failed to create device", L"Error", MB_OK); // Displays a message box with the title "Error" and the message "Failed to create device
-		std::exit(1);
-	}
+    if (FAILED(D3D12CreateDevice(mAdapter.Get(), D3D_FEATURE_LEVEL_12_0, IID_PPV_ARGS(&mDXDevice))))
+    {
+        MessageBoxW(NULL, L"Failed to create device", L"Error",
+                    MB_OK); // Displays a message box with the title "Error" and the message "Failed to create device
+        std::exit(1);
+    }
 
     CD3DX12FeatureSupport featureSupport;
     featureSupport.Init(mDXDevice.Get());
 
-	if (!featureSupport.GPUUploadHeapSupported())
-	{
-		MessageBoxW(NULL, L"GPU Upload Heap is not supported on this device", L"Error", MB_OK);
-		std::exit(1);
-	}
+    if (!featureSupport.GPUUploadHeapSupported())
+    {
+        MessageBoxW(NULL, L"GPU Upload Heap is not supported on this device", L"Error", MB_OK);
+        std::exit(1);
+    }
 
     if (featureSupport.RaytracingTier() == D3D12_RAYTRACING_TIER_NOT_SUPPORTED)
-	{
-		MessageBoxW(NULL, L"Raytracing is not supported on this device", L"Error", MB_OK);
-		std::exit(1);
+    {
+        MessageBoxW(NULL, L"Raytracing is not supported on this device", L"Error", MB_OK);
+        std::exit(1);
     }
 
     // Enable Info Queue
@@ -68,14 +69,14 @@ Application::Application()
             D3D12_MESSAGE_SEVERITY_INFO,
         };
 
-        //D3D12_MESSAGE_ID denyIds[] = {
-        //};
+        // D3D12_MESSAGE_ID denyIds[] = {
+        // };
 
         D3D12_INFO_QUEUE_FILTER newFilter = {};
         newFilter.DenyList.NumSeverities = _countof(severities);
         newFilter.DenyList.pSeverityList = severities;
-        //newFilter.DenyList.NumIDs = _countof(denyIds);
-        //newFilter.DenyList.pIDList = denyIds;
+        // newFilter.DenyList.NumIDs = _countof(denyIds);
+        // newFilter.DenyList.pIDList = denyIds;
 
         THROW_IF_FAILED(pInfoQueue->PushStorageFilter(&newFilter));
     }
@@ -100,7 +101,7 @@ Application::Application()
 
     ComPtr<IDXGISwapChain1> swapChain1 = nullptr;
 
-	HWND hwnd = glfwGetWin32Window(mWindow);
+    HWND hwnd = glfwGetWin32Window(mWindow);
 
     THROW_IF_FAILED(
         mFactory->CreateSwapChainForHwnd(mCommandQueue.Get(), hwnd, &swapChainDesc, nullptr, nullptr, &swapChain1));
@@ -119,7 +120,7 @@ Application::Application()
 
     // Create Command List
     THROW_IF_FAILED(mDXDevice->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE,
-        IID_PPV_ARGS(&mCommandList)));
+                                                  IID_PPV_ARGS(&mCommandList)));
 
     // Create RTV Descriptor Heap
     D3D12_DESCRIPTOR_HEAP_DESC rtvHeapDesc = {};
@@ -145,30 +146,32 @@ Application::Application()
         THROW_IF_FAILED(HRESULT_FROM_WIN32(GetLastError()));
     }
 
-	mDevice = std::make_unique<DXR::Device>(mDXDevice, mAdapter);
+    mDevice = std::make_unique<DXR::Device>(mDXDevice, mAdapter);
 
-	CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, mWidth, mHeight, 1, 1, 1, 0, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Tex2D(DXGI_FORMAT_R8G8B8A8_UNORM, mWidth, mHeight, 1, 1, 1, 0,
+                                                              D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     mOutputImage = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT);
-	desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	mAccumulationImage = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT);
+    desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    mAccumulationImage =
+        mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT);
 
-	desc = CD3DX12_RESOURCE_DESC::Buffer(1024, D3D12_RESOURCE_FLAG_NONE);
+    desc = CD3DX12_RESOURCE_DESC::Buffer(1024, D3D12_RESOURCE_FLAG_NONE);
 
-	mConstantBuffer = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_DEFAULT);
+    mConstantBuffer = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_DEFAULT);
     mStagingBuffers[0] = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_UPLOAD);
     mStagingBuffers[1] = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_UPLOAD);
-	mStagingDatas[0] = (CHAR*)mDevice->MapAllocationForWrite(mStagingBuffers[0]);
-	mStagingDatas[1] = (CHAR*)mDevice->MapAllocationForWrite(mStagingBuffers[1]);
+    mStagingDatas[0] = (CHAR*)mDevice->MapAllocationForWrite(mStagingBuffers[0]);
+    mStagingDatas[1] = (CHAR*)mDevice->MapAllocationForWrite(mStagingBuffers[1]);
 
-	// Create Resource Heap
-	D3D12_DESCRIPTOR_HEAP_DESC resourceHeapDesc = {};
-	resourceHeapDesc.NodeMask = 0;
-	resourceHeapDesc.NumDescriptors = 1000;
-	resourceHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
-	resourceHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
+    // Create Resource Heap
+    D3D12_DESCRIPTOR_HEAP_DESC resourceHeapDesc = {};
+    resourceHeapDesc.NodeMask = 0;
+    resourceHeapDesc.NumDescriptors = 1'000'000;
+    resourceHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
+    resourceHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
-	THROW_IF_FAILED(mDXDevice->CreateDescriptorHeap(&resourceHeapDesc, IID_PPV_ARGS(&mResourceHeap)));
-	mResourceDescriptorSize = mDXDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+    THROW_IF_FAILED(mDXDevice->CreateDescriptorHeap(&resourceHeapDesc, IID_PPV_ARGS(&mResourceHeap)));
+    mResourceDescriptorSize = mDXDevice->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(mResourceHeap->GetCPUDescriptorHandleForHeapStart());
 
@@ -188,40 +191,39 @@ Application::Application()
 
     cpuHandle.Offset(1, mResourceDescriptorSize);
 
-	uavDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
-	mDXDevice->CreateUnorderedAccessView(mAccumulationImage->GetResource(), nullptr, &uavDesc, cpuHandle);
+    uavDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    mDXDevice->CreateUnorderedAccessView(mAccumulationImage->GetResource(), nullptr, &uavDesc, cpuHandle);
 }
-
-
 
 void Application::BeginFrame()
 {
     // Acquire the next image
-	mBackBufferIndex = mSwapchain->GetCurrentBackBufferIndex();
+    mBackBufferIndex = mSwapchain->GetCurrentBackBufferIndex();
 
-	// Wait for the previous frame to finish
-	if (mFence->GetCompletedValue() < mFrameFenceValues[mBackBufferIndex])
-	{
-		THROW_IF_FAILED(mFence->SetEventOnCompletion(mFrameFenceValues[mBackBufferIndex], mFenceEvent));
-		WaitForSingleObject(mFenceEvent, INFINITE);
-	}
+    // Wait for the previous frame to finish
+    if (mFence->GetCompletedValue() < mFrameFenceValues[mBackBufferIndex])
+    {
+        THROW_IF_FAILED(mFence->SetEventOnCompletion(mFrameFenceValues[mBackBufferIndex], mFenceEvent));
+        WaitForSingleObject(mFenceEvent, INFINITE);
+    }
 
     UpdateCamera();
 
     DeltaTime = mFrameTimer.Endd();
     mFrameTimer.Start();
 
-	// Reset the command allocator
-	THROW_IF_FAILED(mCommandAllocators[mBackBufferIndex]->Reset());
+    // Reset the command allocator
+    THROW_IF_FAILED(mCommandAllocators[mBackBufferIndex]->Reset());
 
-	// Reset the command list
-	THROW_IF_FAILED(mCommandList->Reset(mCommandAllocators[mBackBufferIndex].Get(), nullptr));
+    // Reset the command list
+    THROW_IF_FAILED(mCommandList->Reset(mCommandAllocators[mBackBufferIndex].Get(), nullptr));
 
-	// Copy the data to the constant buffer
-	mCommandList->CopyBufferRegion(mConstantBuffer->GetResource(), 0, mStagingBuffers[mBackBufferIndex]->GetResource(), 0, 1024);
+    // Copy the data to the constant buffer
+    mCommandList->CopyBufferRegion(mConstantBuffer->GetResource(), 0, mStagingBuffers[mBackBufferIndex]->GetResource(),
+                                   0, 1024);
 
-	ID3D12DescriptorHeap* ppHeaps[] = { mResourceHeap.Get() };
-	mCommandList->SetDescriptorHeaps(1, ppHeaps);
+    ID3D12DescriptorHeap* ppHeaps[] = {mResourceHeap.Get()};
+    mCommandList->SetDescriptorHeaps(1, ppHeaps);
 }
 
 void Application::EndFrame()
@@ -229,22 +231,21 @@ void Application::EndFrame()
     mPassiveFrameCount++;
     mFrameCount++;
 
-	// Close the command list
-	THROW_IF_FAILED(mCommandList->Close());
+    // Close the command list
+    THROW_IF_FAILED(mCommandList->Close());
 
-	// Execute the command list
-	ID3D12CommandList* ppCommandLists[] = { mCommandList.Get() };
-	mCommandQueue->ExecuteCommandLists(1, ppCommandLists);
+    // Execute the command list
+    ID3D12CommandList* ppCommandLists[] = {mCommandList.Get()};
+    mCommandQueue->ExecuteCommandLists(1, ppCommandLists);
 
-	// Present the image
-	THROW_IF_FAILED(mSwapchain->Present(0, mTearingSupport ? DXGI_PRESENT_ALLOW_TEARING : 0));
+    // Present the image
+    THROW_IF_FAILED(mSwapchain->Present(0, mTearingSupport ? DXGI_PRESENT_ALLOW_TEARING : 0));
 
-	// Signal the fence
-	THROW_IF_FAILED(mCommandQueue->Signal(mFence.Get(), ++mFenceValue));
+    // Signal the fence
+    THROW_IF_FAILED(mCommandQueue->Signal(mFence.Get(), ++mFenceValue));
 
-	// Store the fence value to wait for
-	mFrameFenceValues[mBackBufferIndex] = mFenceValue;
-
+    // Store the fence value to wait for
+    mFrameFenceValues[mBackBufferIndex] = mFenceValue;
 }
 
 void Application::UpdateCamera()
@@ -298,12 +299,12 @@ void Application::UpdateCamera()
 
     uint32_t uniformExtraInfo[4];
     uniformExtraInfo[0] = mPassiveFrameCount;
-    uniformExtraInfo[1] = *(uint32_t *)&time; // type punning
+    uniformExtraInfo[1] = *(uint32_t*)&time; // type punning
 
-	CHAR* data = mStagingDatas[mBackBufferIndex];
+    CHAR* data = mStagingDatas[mBackBufferIndex];
 
-	memcpy(data, mats, sizeof(mats));
-	memcpy(data + sizeof(mats), uniformExtraInfo, sizeof(uniformExtraInfo));
+    memcpy(data, mats, sizeof(mats));
+    memcpy(data + sizeof(mats), uniformExtraInfo, sizeof(uniformExtraInfo));
 }
 
 void Application::CleanUp()
@@ -316,23 +317,23 @@ void Application::CleanUp()
 
 void Application::Run()
 {
-	Start();
+    Start();
 
     while (!glfwWindowShouldClose(mWindow))
     {
         BeginFrame();
         Update();
         glfwPollEvents();
-		EndFrame();
+        EndFrame();
     }
 
     CleanUp();
 
-	Stop();
+    Stop();
 }
 
 Application::~Application()
 {
-	glfwDestroyWindow(mWindow);
-	glfwTerminate();
+    glfwDestroyWindow(mWindow);
+    glfwTerminate();
 }
