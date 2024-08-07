@@ -8,10 +8,18 @@ struct PerformanceData
     DOUBLE PerformanceTime;
 };
 
+struct VoxAABB
+{
+    glm::vec3 Min;
+    glm::vec3 Max;
+    uint64_t ColorIndex;
+};
+
 struct VoxelModel
 {
+    glm::vec3 Size;
     glm::mat3x4 Transform;
-    std::vector<D3D12_RAYTRACING_AABB> AABBs;
+    std::vector<VoxAABB> AABBs;
 };
 
 struct VoxelScene
@@ -19,15 +27,19 @@ struct VoxelScene
     std::vector<ComPtr<DMA::Allocation>> ModelBuffers;
     ComPtr<DMA::Allocation> InstanceBuffer;
 
+    ComPtr<DMA::Allocation> SizeBuffer;
+    ComPtr<DMA::Allocation> ColorBuffer;
+
     std::vector<DXR::AccelerationStructureDesc> BLASDescs;
     DXR::AccelerationStructureDesc TLASDesc;
 
     std::vector<ComPtr<DMA::Allocation>> BLAS;
     ComPtr<DMA::Allocation> TLAS;
 
-    ComPtr<DMA::Allocation> ScratchBuffer;
+    ComPtr<DMA::Allocation> ScratchBufferBLAS;
+    ComPtr<DMA::Allocation> ScratchBufferTLAS;
 
-    std::vector<D3D12_SHADER_RESOURCE_VIEW_DESC> SRVs;
+    std::vector<D3D12_SHADER_RESOURCE_VIEW_DESC> AABBViews;
 };
 
 class VoxelApp : public Application

@@ -6,7 +6,7 @@ project("DXRay")
 option(DXRAY_USE_AGILITY_SDK "Use the Agility SDK for GPU Upload Heap feature" ON)
 
 # Fetch the DirectX Agility SDK 
-set(AGILITY_SDK_URL "https://globalcdn.nuget.org/packages/microsoft.direct3d.d3d12.1.711.3-preview.nupkg")
+set(AGILITY_SDK_URL "https://globalcdn.nuget.org/packages/microsoft.direct3d.d3d12.1.715.0-preview.nupkg")
 set(AGILITY_SDK_DIR "${PROJECT_SOURCE_DIR}/Deps/AgilitySDK")
 
 # Download the Agility SDK if it doesn't exist, If user wants to replace the sdk, then they can extract the zip file manually
@@ -48,7 +48,7 @@ target_precompile_headers(DXRay PRIVATE "${PROJECT_SOURCE_DIR}/Include/DXRay/DXR
 
 # Set Compile Definitions
 if( DXRAY_USE_AGILITY_SDK )
-	target_compile_definitions(DXRay PUBLIC DXRAY_AGILITY_SDK_VERSION=711 DXRAY_AGILITY_SDK_PATH="AgilitySDK\\\\")
+	target_compile_definitions(DXRay PUBLIC DXRAY_AGILITY_SDK_VERSION=715 DXRAY_AGILITY_SDK_PATH="AgilitySDK\\\\")
 endif()
 
 # Add the Include Directory

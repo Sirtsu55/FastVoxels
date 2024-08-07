@@ -8,29 +8,50 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
     auto scene = std::make_shared<VoxelScene>();
 
     std::vector<uint8_t> rawVox;
-    FileRead("Assets/CountrySide_Source.vox", rawVox);
+    FileRead("Assets/grave.vox", rawVox);
     auto voxScene = ogt_vox_read_scene(rawVox.data(), rawVox.size());
     rawVox.clear();
 
-    std::vector<VoxelModel> models;
+    // Color Buffer for the voxels
+    auto colorBufferDesc =
+        CD3DX12_RESOURCE_DESC::Buffer(256 * sizeof(uint32_t), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    scene->ColorBuffer =
+        device->AllocateResource(colorBufferDesc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD);
 
+    // copy the colors to the buffer
+    uint8_t* colors = (uint8_t*)device->MapAllocationForWrite(scene->ColorBuffer);
+    memcpy(colors, voxScene->palette.color, 256 * sizeof(uint32_t));
+
+    auto sizeBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(voxScene->num_instances * sizeof(glm::vec4),
+                                                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+    scene->SizeBuffer =
+        device->AllocateResource(sizeBufferDesc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD);
+
+    std::vector<VoxelModel> models;
     // Keep track of the total size needed for the buffer
-    uint64_t bufferSize = 0;
     for (uint32_t i = 0; i < voxScene->num_instances; i++)
     {
         auto& instance = voxScene->instances[i];
         auto& model = voxScene->models[instance.model_index];
+        auto& group = voxScene->groups[instance.group_index];
 
         VoxelModel& voxelModel = models.emplace_back();
 
-        voxelModel.Transform = glm::transpose(glm::make_mat4(&instance.transform.m00));
+        glm::mat4 instanceTransform = glm::make_mat4(&instance.transform.m00);
+        glm::mat4 groupTransform = glm::make_mat4(&group.transform.m00);
 
-        uint32_t sizeX = model->size_x;
-        uint32_t sizeY = model->size_y;
-        uint32_t sizeZ = model->size_z;
+        glm::mat4 modelTransform = instanceTransform * groupTransform;
 
-        // One transform matrix per model
-        bufferSize += sizeof(glm::mat4x3);
+        const uint32_t sizeX = model->size_x;
+        const uint32_t sizeY = model->size_y;
+        const uint32_t sizeZ = model->size_z;
+
+        voxelModel.Size = glm::vec3(sizeX, sizeY, sizeZ);
+
+        glm::vec3 trans = -glm::vec3(sizeX / 2.0, sizeY / 2.0, sizeZ / 2.0);
+
+        modelTransform = glm::translate(modelTransform, trans);
+        voxelModel.Transform = glm::transpose(modelTransform);
 
         // Iterate over the voxels in the model
         for (uint32_t x = 0; x < sizeX; x++)
@@ -46,25 +67,21 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
 
                         glm::vec3 mid = glm::vec3(x, y, z);
 
-                        D3D12_RAYTRACING_AABB aabb = {};
-                        aabb.MinX = mid.x - voxSize;
-                        aabb.MinY = mid.y - voxSize;
-                        aabb.MinZ = mid.z - voxSize;
-                        aabb.MaxX = mid.x + voxSize;
-                        aabb.MaxY = mid.y + voxSize;
-                        aabb.MaxZ = mid.z + voxSize;
-
-                        voxelModel.AABBs.push_back(aabb);
+                        auto& aabb = voxelModel.AABBs.emplace_back();
+                        aabb.ColorIndex = color;
+                        aabb.Max = mid + glm::vec3(voxSize);
+                        aabb.Min = mid - glm::vec3(voxSize);
                     }
                 }
             }
         }
-        bufferSize += sizeof(D3D12_RAYTRACING_AABB) * voxelModel.AABBs.size();
     }
 
+    glm::vec3* sizes = (glm::vec3*)device->MapAllocationForWrite(scene->SizeBuffer);
     for (auto& model : models)
     {
-        auto allocDesc = CD3DX12_RESOURCE_DESC::Buffer(model.AABBs.size() * sizeof(D3D12_RAYTRACING_AABB),
+        // All the AABBs for the model
+        auto allocDesc = CD3DX12_RESOURCE_DESC::Buffer(model.AABBs.size() * sizeof(VoxAABB),
                                                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
         auto& modelBuffer = scene->ModelBuffers.emplace_back(
             device->AllocateResource(allocDesc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD));
@@ -80,12 +97,12 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
                 D3D12_RAYTRACING_GEOMETRY_AABBS_DESC {
                     .AABBCount = model.AABBs.size(),
                     .AABBs = D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE {.StartAddress = gpuAddress,
-                                                                   .StrideInBytes = sizeof(D3D12_RAYTRACING_AABB)}},
+                                                                   .StrideInBytes = sizeof(VoxAABB)}},
         });
 
-        memcpy(aabbs, model.AABBs.data(), model.AABBs.size() * sizeof(D3D12_RAYTRACING_AABB));
-
-        modelBuffer->GetResource()->Unmap(0, nullptr);
+        memcpy(aabbs, model.AABBs.data(), model.AABBs.size() * sizeof(VoxAABB));
+        memcpy(sizes, glm::value_ptr(model.Size), sizeof(glm::vec3));
+        sizes++; // Move to the next size
 
         // Create the BLAS
         scene->BLAS.push_back(device->AllocateAccelerationStructure(blas));
@@ -96,10 +113,10 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
         srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
         srvDesc.Buffer.FirstElement = 0;
         srvDesc.Buffer.NumElements = model.AABBs.size();
-        srvDesc.Buffer.StructureByteStride = sizeof(D3D12_RAYTRACING_AABB);
+        srvDesc.Buffer.StructureByteStride = sizeof(VoxAABB);
         srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
-        scene->SRVs.push_back(srvDesc);
+        scene->AABBViews.push_back(srvDesc);
     }
 
     // Create TLAS for the models
@@ -129,8 +146,13 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
 
     scene->TLAS = device->AllocateAccelerationStructure(scene->TLASDesc);
 
-    // Scratch buffer
-    scene->ScratchBuffer = device->AllocateAndAssignScratchBuffer(scene->BLASDescs);
+    // Scratch buffer for BLAS
+    scene->ScratchBufferBLAS = device->AllocateAndAssignScratchBuffer(scene->BLASDescs);
+
+    // Scratch buffer for TLAS
+    scene->ScratchBufferTLAS = device->AllocateAndAssignScratchBuffer(scene->TLASDesc);
+
+    ogt_vox_destroy_scene(voxScene);
 
     return scene;
 }
@@ -223,11 +245,25 @@ void VoxelApp::Start()
     mTimestampFrequency = frequency;
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(mResourceHeap->GetCPUDescriptorHandleForHeapStart());
-    cpuHandle.Offset(3, mResourceDescriptorSize);
+    cpuHandle.Offset(2, mResourceDescriptorSize);
+
+    // Color buffer
+    D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
+    srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
+    srvDesc.Format = DXGI_FORMAT_R32_TYPELESS;
+    srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srvDesc.Buffer.FirstElement = 0;
+    srvDesc.Buffer.NumElements = 256;
+    srvDesc.Buffer.StructureByteStride = 0;
+    srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
+
+    mDXDevice->CreateShaderResourceView(mScene->ColorBuffer->GetResource(), &srvDesc, cpuHandle);
+
+    cpuHandle.Offset(1, mResourceDescriptorSize);
 
     for (uint32_t i = 0; i < mScene->ModelBuffers.size(); i++)
     {
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = mScene->SRVs[i];
+        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = mScene->AABBViews[i];
         auto& modelBuffer = mScene->ModelBuffers[i];
 
         mDXDevice->CreateShaderResourceView(modelBuffer->GetResource(), &srvDesc, cpuHandle);

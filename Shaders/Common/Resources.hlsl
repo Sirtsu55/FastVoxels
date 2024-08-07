@@ -3,6 +3,7 @@ struct AABB
 {
     float3 Min;
     float3 Max;
+    uint64_t ColorIndex;
 };
 
 struct HitInfo
@@ -14,12 +15,6 @@ struct HitInfo
 struct Payload
 {
     float3 HitColor;
-    
-    float HitLight;
-    float3 HitLoc;
-    
-    float3 NextDir;
-    bool TerminateRay;
 };
 
 
@@ -42,7 +37,7 @@ ProceduralPrimitiveHitGroup AABBHitGroup =
 RaytracingShaderConfig ShaderConfig =
 {
     44,
-    24
+    32
 };
 
 RaytracingPipelineConfig PipelineConfig =

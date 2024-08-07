@@ -108,6 +108,10 @@ namespace DXR
         /// GetRequiredScratchBufferSize(...) to ensure that it is large enough.
         void AssignScratchBuffer(std::vector<AccelerationStructureDesc>& descs, ComPtr<DMA::Allocation>& alloc);
 
+        ComPtr<DMA::Allocation> AllocateAndAssignScratchBuffer(AccelerationStructureDesc& desc);
+
+        void AssignScratchBuffer(AccelerationStructureDesc& desc, ComPtr<DMA::Allocation>& alloc);
+
         /// @brief Allocate a big scratch buffer that will be used for all acceleration structures and assign regions
         /// to each acceleration structure. This is a convenience function that calls GetRequiredScratchBufferSize(...),
         /// AllocateScratchBuffer(...) and AssignScratchBuffer(...) in that order.
@@ -172,8 +176,7 @@ namespace DXR
         /// @todo Add support for copying shader tables to DEFAULT heap
         /// @todo Add support for writing to local root signatures
 
-
-private: // Internal methods
+    private: // Internal methods
         /// @brief Allocate a bottom level acceleration structure, used by AllocateAccelerationStructure(...) if
         /// the type is bottom level
         ComPtr<DMA::Allocation> InternalAllocateBottomAccelerationStructure(AccelerationStructureDesc& desc);

@@ -126,6 +126,15 @@ namespace DXR
         }
     }
 
+    ComPtr<DMA::Allocation> Device::AllocateAndAssignScratchBuffer(AccelerationStructureDesc& desc)
+    {
+        ComPtr<DMA::Allocation> scratchBuffer = AllocateScratchBuffer(desc.GetScratchBufferSize());
+
+        desc.BuildDesc.ScratchAccelerationStructureData = scratchBuffer->GetResource()->GetGPUVirtualAddress();
+
+        return scratchBuffer;
+    }
+
     ComPtr<DMA::Allocation> Device::AllocateAndAssignScratchBuffer(std::vector<AccelerationStructureDesc>& descs)
     {
         UINT64 size = GetRequiredScratchBufferSize(descs);
@@ -140,7 +149,7 @@ namespace DXR
     ComPtr<DMA::Allocation> Device::AllocateScratchBuffer(UINT64 size)
     {
         D3D12_RESOURCE_DESC resDesc = CD3DX12_RESOURCE_DESC::Buffer(size, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-        return AllocateResource(resDesc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT);
+        return AllocateResource(resDesc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD);
     }
 
     ComPtr<DMA::Allocation> Device::AllocateInstanceBuffer(UINT64 numInstances, D3D12_HEAP_TYPE heapType)
