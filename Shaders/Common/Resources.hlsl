@@ -19,7 +19,7 @@ struct Payload
     float3 HitColor;
     float3 RayDirection;
     float T;
-    float Light;
+    float Emission;
 };
 
 struct SceneInfo

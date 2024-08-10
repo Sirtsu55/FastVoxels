@@ -6,6 +6,11 @@ static const uint AccumulationBufferIndex = 2;
 static const uint ColorBufferIndex = 3;
 static const uint AABBBufferIndexStart = 4;
 
+struct VoxMaterial
+{
+    uint Color;
+    float Emission;
+};
 
 AABB GetAABB()
 {
@@ -15,10 +20,10 @@ AABB GetAABB()
 
 }
 
-uint GetColor(uint index)
+VoxMaterial GetColor(uint index)
 {
-    ByteAddressBuffer buf = ResourceDescriptorHeap[ColorBufferIndex];
-    return buf.Load(index * 4);
+    StructuredBuffer<VoxMaterial> buf = ResourceDescriptorHeap[ColorBufferIndex];
+    return buf[index];
 }
 
 float max_component(float3 v)
@@ -96,9 +101,6 @@ void rgen()
     
     for (uint i = 0; i < 4; i++)
     {
-
-        
-        
         TraceRay(rs, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, rayDesc, p);
         if(p.T == -1.0f)
             break;
@@ -108,9 +110,9 @@ void rgen()
     }
     
     const int2 index = int2(LaunchID.xy);
-    float3 Radiance = p.HitColor * p.Light;
+    float3 Radiance = p.HitColor * p.Emission;
     
-    if (any(isnan(Radiance)))
+    if (any(isnan(Radiance)) || any(isinf(Radiance)))
         Radiance = float3(0.0, 0.0, 0.0);
     
     uint frameCount = asuint(sceneInfo.otherInfo.x);
@@ -140,6 +142,8 @@ void chit(inout Payload p, in AABB voxel)
 {
     ConstantBuffer<SceneInfo> sceneInfo = ResourceDescriptorHeap[SceneConstantsIndex];
     
+    const float SceneEmissiveIntensity = asfloat(sceneInfo.otherInfo.z);
+    
     HitInfo info = getHitInfo(voxel);
     if (info.T == -1.0f)
     {
@@ -148,26 +152,41 @@ void chit(inout Payload p, in AABB voxel)
         return;
     }
     
-    float3 v = WorldRayDirection();
+    float3 v = ObjectRayDirection();
     float time = asfloat(sceneInfo.otherInfo.y);
     uint seed = asint(time) * asint(v.x) * asint(v.y) * asint(v.z);
     
     float2 rand = float2(NextRandomFloat(seed), NextRandomFloat(seed));
     
-    
-    
-    uint color = GetColor(voxel.ColorIndex);
-    float3 Color = float3((color & 0xFF) / 255.0, ((color >> 8) & 0xFF) / 255.0, ((color >> 16) & 0xFF) / 255.0);
+    VoxMaterial m = GetColor(voxel.ColorIndex);
+    float3 Color = float3((m.Color & 0xFF) / 255.0, ((m.Color >> 8) & 0xFF) / 255.0, ((m.Color >> 16) & 0xFF) / 255.0);
     p.HitColor *= Color;
     p.RayDirection = SampleCosineHemisphere(info.Normal, rand);
-    p.Light = 0;
-    p.T = info.T;
+    p.Emission = m.Emission * SceneEmissiveIntensity;
+    if (m.Emission > 0)
+    {
+        p.T = -1.0f;
+    }
+    else
+    {
+        p.T = info.T;
+    }
+    
+    //p.HitColor = info.Normal;
+    //p.Emission = 1;
+    //p.T = -1.0f;
+    
 }
 
 [shader("miss")]
 void miss(inout Payload p)
 {
-    p.HitColor *= float3(0.5, 0.7, 1.0);
-    p.Light = 1.0;
+    p.HitColor *= float3(0.0, 0.0, 0.0);
+    p.Emission = 1.0;
     p.T = -1.0f;
+    
+    //p.HitColor = float3(0.0, 0.0, 0.0);
+    //p.Emission = 0.0;
+    //p.T = -1.0f;
+    
 }

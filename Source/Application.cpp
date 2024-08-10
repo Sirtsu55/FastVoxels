@@ -207,7 +207,7 @@ void Application::BeginFrame()
         WaitForSingleObject(mFenceEvent, INFINITE);
     }
 
-    UpdateCamera();
+    HandleIO();
 
     DeltaTime = mFrameTimer.Endd();
     mFrameTimer.Start();
@@ -248,7 +248,7 @@ void Application::EndFrame()
     mFrameFenceValues[mBackBufferIndex] = mFenceValue;
 }
 
-void Application::UpdateCamera()
+void Application::HandleIO()
 {
     glm::dvec2 lastMousePos = mMousePos;
 
@@ -286,6 +286,16 @@ void Application::UpdateCamera()
         mCamera.MoveRight(-DeltaTime * MovementSpeed);
         mPassiveFrameCount = 0;
     }
+    if (glfwGetKey(mWindow, GLFW_KEY_E) == GLFW_PRESS)
+    {
+        mSceneLightIntensity += 1.0f * DeltaTime * 50.0f;
+        mPassiveFrameCount = 0;
+    }
+    if (glfwGetKey(mWindow, GLFW_KEY_Q) == GLFW_PRESS)
+    {
+        mSceneLightIntensity -= 1.0f * DeltaTime * 50.0f;
+        mPassiveFrameCount = 0;
+    }
 
     glm::mat4 view = mCamera.GetViewMatrix();
 
@@ -303,7 +313,8 @@ void Application::UpdateCamera()
 
     uint32_t uniformExtraInfo[4];
     uniformExtraInfo[0] = mPassiveFrameCount;
-    uniformExtraInfo[1] = *(uint32_t*)&time; // type punning
+    uniformExtraInfo[1] = *(uint32_t*)&time;                 // type punning
+    uniformExtraInfo[2] = *(uint32_t*)&mSceneLightIntensity; // type punning
 
     CHAR* data = mStagingDatas[mBackBufferIndex];
 

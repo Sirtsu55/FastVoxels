@@ -20,7 +20,7 @@ public:
 
     void EndFrame();
 
-    void UpdateCamera();
+    void HandleIO();
 
     void CleanUp();
 
@@ -74,6 +74,7 @@ protected:
     UINT32 mHeight = 1080;
 
     Camera mCamera;
+    float mSceneLightIntensity = 1.0f;
 
     glm::dvec2 mMousePos = {0.0f, 0.0f};
     glm::dvec2 mMouseDelta = {0.0f, 0.0f};
