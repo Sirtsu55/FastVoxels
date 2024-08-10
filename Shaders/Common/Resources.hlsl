@@ -1,9 +1,11 @@
+#pragma once
 
 struct AABB
 {
     float3 Min;
     float3 Max;
-    uint64_t ColorIndex;
+    uint ColorIndex;
+    uint Padding;
 };
 
 struct HitInfo
@@ -15,8 +17,10 @@ struct HitInfo
 struct Payload
 {
     float3 HitColor;
+    float3 RayDirection;
+    float T;
+    float Light;
 };
-
 
 struct SceneInfo
 {

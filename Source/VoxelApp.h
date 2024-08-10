@@ -12,7 +12,8 @@ struct VoxAABB
 {
     glm::vec3 Min;
     glm::vec3 Max;
-    uint64_t ColorIndex;
+    uint32_t ColorIndex;
+    uint32_t Padding;
 };
 
 struct VoxelModel
@@ -42,7 +43,7 @@ struct VoxelScene
     std::vector<D3D12_SHADER_RESOURCE_VIEW_DESC> AABBViews;
 };
 
-class VoxelApp : public Application
+class AxisAlignedIntersection : public Application
 {
 public:
     virtual void Start() override;

@@ -18,11 +18,14 @@ using namespace Microsoft::WRL;
 #include <iomanip>
 
 #if defined(_DEBUG)
-#define THROW_IF_FAILED(hr) if (FAILED(hr)) { __debugbreak(); }
+#define THROW_IF_FAILED(hr)                                                                                            \
+    if (FAILED(hr))                                                                                                    \
+    {                                                                                                                  \
+        __debugbreak();                                                                                                \
+    }
 #else
 #define THROW_IF_FAILED(hr) hr;
 #endif
-
 
 #include "SimpleTimer.h"
 #include "FileRead.h"

@@ -8,7 +8,7 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
     auto scene = std::make_shared<VoxelScene>();
 
     std::vector<uint8_t> rawVox;
-    FileRead("Assets/grave.vox", rawVox);
+    FileRead("Assets/gym.vox", rawVox);
     auto voxScene = ogt_vox_read_scene(rawVox.data(), rawVox.size());
     rawVox.clear();
 
@@ -157,7 +157,7 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
     return scene;
 }
 
-void VoxelApp::Start()
+void AxisAlignedIntersection::Start()
 {
     // Write the header to the file
     mPerformanceData.reserve(100);
@@ -165,7 +165,7 @@ void VoxelApp::Start()
     mPerformanceFile << "Frame (n),Performance Time (ms)" << std::endl;
 
     // Create the pipeline
-    auto dxil = mShaderCompiler.CompileFromFile("Shaders/BasicShader.hlsl");
+    auto dxil = mShaderCompiler.CompileFromFile("Shaders/AxisAlignedIntersection.hlsl");
     assert(dxil != nullptr);
     CD3DX12_SHADER_BYTECODE shader {dxil->GetBufferPointer(), dxil->GetBufferSize()};
 
@@ -245,7 +245,7 @@ void VoxelApp::Start()
     mTimestampFrequency = frequency;
 
     CD3DX12_CPU_DESCRIPTOR_HANDLE cpuHandle(mResourceHeap->GetCPUDescriptorHandleForHeapStart());
-    cpuHandle.Offset(2, mResourceDescriptorSize);
+    cpuHandle.Offset(3, mResourceDescriptorSize);
 
     // Color buffer
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -271,7 +271,7 @@ void VoxelApp::Start()
     }
 }
 
-void VoxelApp::Update()
+void AxisAlignedIntersection::Update()
 {
     mCommandList->SetPipelineState1(mPipeline.Get());
 
@@ -317,7 +317,7 @@ void VoxelApp::Update()
     }
 }
 
-void VoxelApp::WritePerformanceData()
+void AxisAlignedIntersection::WritePerformanceData()
 {
     for (auto& data : mPerformanceData)
     {
@@ -326,7 +326,7 @@ void VoxelApp::WritePerformanceData()
     mPerformanceData.clear();
 }
 
-void VoxelApp::Stop()
+void AxisAlignedIntersection::Stop()
 {
     // Write the performance data to the file
     WritePerformanceData();
@@ -338,7 +338,7 @@ int main()
     // Create the application, start it, run it and stop it, boierplate code, eg initialising vulkan, glfw, etc
     // that is the same for every application is handled by the Application class
     // it can be found in the Base folder
-    Application* app = new VoxelApp();
+    Application* app = new AxisAlignedIntersection();
 
     app->Run();
 

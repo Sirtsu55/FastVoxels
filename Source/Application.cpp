@@ -152,6 +152,8 @@ Application::Application()
                                                               D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     mOutputImage = mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT);
     desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    mAccumulationImage =
+        mDevice->AllocateResource(desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT);
 
     desc = CD3DX12_RESOURCE_DESC::Buffer(1024, D3D12_RESOURCE_FLAG_NONE);
 
@@ -186,6 +188,11 @@ Application::Application()
     uavDesc.Texture2D.MipSlice = 0;
     uavDesc.Texture2D.PlaneSlice = 0;
     mDXDevice->CreateUnorderedAccessView(mOutputImage->GetResource(), nullptr, &uavDesc, cpuHandle);
+
+    cpuHandle.Offset(1, mResourceDescriptorSize);
+
+    uavDesc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+    mDXDevice->CreateUnorderedAccessView(mAccumulationImage->GetResource(), nullptr, &uavDesc, cpuHandle);
 }
 
 void Application::BeginFrame()

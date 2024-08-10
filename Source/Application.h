@@ -55,7 +55,15 @@ protected:
     UINT32 mRTVDescriptorSize = 0;
     UINT32 mResourceDescriptorSize = 0;
 
+    // User descriptor heap starts
+    // 0 - Scene constant buffer
+    // 1 - Output image
+    // 2 - Accumulation image
+    // 3... - User defined
+    constexpr inline static UINT32 UserDescriptorStartIndex = 3;
+
     ComPtr<DMA::Allocation> mOutputImage;
+    ComPtr<DMA::Allocation> mAccumulationImage;
     ComPtr<DMA::Allocation> mConstantBuffer;
     ComPtr<DMA::Allocation> mStagingBuffers[2] = {0};
     CHAR* mStagingDatas[2] = {0};
