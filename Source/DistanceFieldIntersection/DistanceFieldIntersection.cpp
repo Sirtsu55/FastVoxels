@@ -1,5 +1,5 @@
 #include "Common.h"
-#include "VoxelApp.h"
+#include "DistanceFieldIntersection/DistanceFieldIntersection.h"
 #include "FileRead.h"
 #include "ogt_vox.h"
 

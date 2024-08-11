@@ -10,7 +10,3 @@
 	path = Deps/glfw
 	url = https://github.com/glfw/glfw.git
 	shallow = true
-[submodule "optick"]
-	path = optick
-	url = https://github.com/bombomby/optick.git
-	shallow = true

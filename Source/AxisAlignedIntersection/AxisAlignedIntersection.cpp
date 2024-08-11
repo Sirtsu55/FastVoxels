@@ -172,20 +172,30 @@ void AxisAlignedIntersection::Start()
     mPerformanceFile << "Frame (n),Performance Time (ms)" << std::endl;
 
     // Create the pipeline
-    auto dxil = mShaderCompiler.CompileFromFile("Shaders/AxisAlignedIntersection.hlsl");
-    assert(dxil != nullptr);
-    CD3DX12_SHADER_BYTECODE shader {dxil->GetBufferPointer(), dxil->GetBufferSize()};
+    auto dxilAxisAligned = mShaderCompiler.CompileFromFile("Shaders/AxisAlignedIntersection.hlsl");
+    auto dxilCommon = mShaderCompiler.CompileFromFile("Shaders/CommonShaders.hlsl");
+    assert(dxilAxisAligned != nullptr);
+    assert(dxilCommon != nullptr);
+    CD3DX12_SHADER_BYTECODE shaderAxisAligned {dxilAxisAligned->GetBufferPointer(), dxilAxisAligned->GetBufferSize()};
+    CD3DX12_SHADER_BYTECODE shaderCommon {dxilCommon->GetBufferPointer(), dxilCommon->GetBufferSize()};
 
     // Create the root signature
-    mDXDevice->CreateRootSignature(0, shader.pShaderBytecode, shader.BytecodeLength, IID_PPV_ARGS(&mRootSig));
+    mDXDevice->CreateRootSignature(0, shaderCommon.pShaderBytecode, shaderCommon.BytecodeLength,
+                                   IID_PPV_ARGS(&mRootSig));
 
     CD3DX12_STATE_OBJECT_DESC rtPipeline(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
 
     // Add the DXIL library
     auto* lib = rtPipeline.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>();
-    lib->SetDXILLibrary(&shader);
+    lib->SetDXILLibrary(&shaderCommon);
     lib->DefineExport(L"rgen");
     lib->DefineExport(L"miss");
+    lib->DefineExport(L"ShaderConfig");
+    lib->DefineExport(L"PipelineConfig");
+    lib->DefineExport(L"RootSig");
+
+    lib = rtPipeline.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>();
+    lib->SetDXILLibrary(&shaderAxisAligned);
     lib->DefineExport(L"chit");
     lib->DefineExport(L"isect");
     lib->DefineExport(L"AABBHitGroup");
