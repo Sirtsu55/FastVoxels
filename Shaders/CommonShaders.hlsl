@@ -43,8 +43,13 @@ void rgen()
 [shader("miss")]
 void miss(inout Payload p)
 {
-    p.HitColor *= float3(0.0, 0.0, 0.0);
-    p.Emission = 1.0;
+    ConstantBuffer<SceneInfo> sceneInfo = ResourceDescriptorHeap[SceneConstantsIndex];
+    const float SkyBrightness = asfloat(sceneInfo.otherInfo.w);
+    
+    const float3 rayDir = normalize(WorldRayDirection());
+    const float t = 0.5f * (rayDir.y + 1.0f);
+    p.HitColor *= lerp(float3(1.0, 1.0, 1.0), float3(0.5, 0.7, 1.0), t);
+    p.Emission = SkyBrightness;
     p.T = -1.0f;
     
     //p.HitColor = float3(0.0, 0.0, 0.0);

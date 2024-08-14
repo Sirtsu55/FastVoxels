@@ -75,6 +75,7 @@ protected:
 
     Camera mCamera;
     float mSceneLightIntensity = 1.0f;
+    float mSkyBrightness = 1.0f;
 
     glm::dvec2 mMousePos = {0.0f, 0.0f};
     glm::dvec2 mMouseDelta = {0.0f, 0.0f};
@@ -83,6 +84,7 @@ protected:
     float MovementSpeed = 1.0f;
 
     float DeltaTime = 0.0f;
+    float TitleUpdateTime = 0.0f;
 
     UINT64 mFrameCount = 0;
     UINT64 mPassiveFrameCount = 0;

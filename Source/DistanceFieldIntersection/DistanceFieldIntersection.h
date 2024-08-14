@@ -1,6 +1,7 @@
 #include "Common.h"
 #include "ShaderCompiler.h"
 #include "Application.h"
+#include <cstdint>
 
 struct PerformanceData
 {
@@ -8,27 +9,29 @@ struct PerformanceData
     DOUBLE PerformanceTime;
 };
 
-struct VoxAABB
+struct Voxel
 {
-    glm::vec3 Min;
-    glm::vec3 Max;
-    uint32_t ColorIndex;
-    uint32_t Padding;
+    uint8_t Distance;
+    uint8_t ColorIndex = 0;
+};
+
+struct VoxMaterial
+{
+    uint32_t Color;
+    float Emissive;
 };
 
 struct VoxelModel
 {
+    std::vector<Voxel> Voxels;
     glm::vec3 Size;
     glm::mat3x4 Transform;
-    std::vector<VoxAABB> AABBs;
 };
 
 struct VoxelScene
 {
-    std::vector<ComPtr<DMA::Allocation>> ModelBuffers;
-    ComPtr<DMA::Allocation> InstanceBuffer;
+    std::vector<ComPtr<DMA::Allocation>> DistanceFieldTextures;
 
-    ComPtr<DMA::Allocation> SizeBuffer;
     ComPtr<DMA::Allocation> ColorBuffer;
 
     std::vector<DXR::AccelerationStructureDesc> BLASDescs;
@@ -36,14 +39,15 @@ struct VoxelScene
 
     std::vector<ComPtr<DMA::Allocation>> BLAS;
     ComPtr<DMA::Allocation> TLAS;
+    ComPtr<DMA::Allocation> InstanceBuffer;
 
     ComPtr<DMA::Allocation> ScratchBufferBLAS;
     ComPtr<DMA::Allocation> ScratchBufferTLAS;
 
-    std::vector<D3D12_SHADER_RESOURCE_VIEW_DESC> AABBViews;
+    uint64_t NumVoxels = 0;
 };
 
-class AxisAlignedIntersection : public Application
+class DistanceFieldIntersection : public Application
 {
 public:
     virtual void Start() override;

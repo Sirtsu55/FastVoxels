@@ -32,9 +32,7 @@ struct VoxelModel
 struct VoxelScene
 {
     std::vector<ComPtr<DMA::Allocation>> ModelBuffers;
-    ComPtr<DMA::Allocation> InstanceBuffer;
 
-    ComPtr<DMA::Allocation> SizeBuffer;
     ComPtr<DMA::Allocation> ColorBuffer;
 
     std::vector<DXR::AccelerationStructureDesc> BLASDescs;
@@ -42,11 +40,14 @@ struct VoxelScene
 
     std::vector<ComPtr<DMA::Allocation>> BLAS;
     ComPtr<DMA::Allocation> TLAS;
+    ComPtr<DMA::Allocation> InstanceBuffer;
 
     ComPtr<DMA::Allocation> ScratchBufferBLAS;
     ComPtr<DMA::Allocation> ScratchBufferTLAS;
 
     std::vector<D3D12_SHADER_RESOURCE_VIEW_DESC> AABBViews;
+
+    uint64_t NumVoxels = 0;
 };
 
 class AxisAlignedIntersection : public Application

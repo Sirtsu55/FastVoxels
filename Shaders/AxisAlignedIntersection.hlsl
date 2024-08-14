@@ -116,13 +116,16 @@ void chit(inout Payload p, in AABB voxel)
     float3 Color = float3((m.Color & 0xFF) / 255.0, ((m.Color >> 8) & 0xFF) / 255.0, ((m.Color >> 16) & 0xFF) / 255.0);
     p.HitColor *= Color;
     p.RayDirection = SampleCosineHemisphere(info.Normal, rand);
-    p.Emission = m.Emission * SceneEmissiveIntensity;
-    if (m.Emission > 0)
+    
+    // If there is emission, we don't need to trace further.
+    if (m.Emission > 0.0)
     {
+        p.Emission = m.Emission * SceneEmissiveIntensity;
         p.T = -1.0f;
     }
     else
     {
+        p.Emission = 0.0;
         p.T = info.T;
     }
     

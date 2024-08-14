@@ -1,31 +1,31 @@
-#include "Common.h"
 #include "DistanceFieldIntersection/DistanceFieldIntersection.h"
+#include "Common.h"
 #include "FileRead.h"
 #include "ogt_vox.h"
 
-std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, const std::string& voxFile)
+std::shared_ptr<VoxelScene> LoadAsDistanceField(std::shared_ptr<DXR::Device> device, const std::string& voxFile)
 {
     auto scene = std::make_shared<VoxelScene>();
 
     std::vector<uint8_t> rawVox;
-    FileRead("Assets/gym.vox", rawVox);
+    FileRead(voxFile, rawVox);
     auto voxScene = ogt_vox_read_scene(rawVox.data(), rawVox.size());
     rawVox.clear();
 
     // Color Buffer for the voxels
     auto colorBufferDesc =
-        CD3DX12_RESOURCE_DESC::Buffer(256 * sizeof(uint32_t), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        CD3DX12_RESOURCE_DESC::Buffer(256 * sizeof(VoxMaterial), D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
     scene->ColorBuffer =
         device->AllocateResource(colorBufferDesc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD);
 
     // copy the colors to the buffer
-    uint8_t* colors = (uint8_t*)device->MapAllocationForWrite(scene->ColorBuffer);
-    memcpy(colors, voxScene->palette.color, 256 * sizeof(uint32_t));
-
-    auto sizeBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(voxScene->num_instances * sizeof(glm::vec4),
-                                                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-    scene->SizeBuffer =
-        device->AllocateResource(sizeBufferDesc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD);
+    VoxMaterial* colors = (VoxMaterial*)device->MapAllocationForWrite(scene->ColorBuffer);
+    for (uint32_t i = 0; i < 256; i++)
+    {
+        // Type punning
+        colors[i].Color = *(uint32_t*)&voxScene->palette.color[i];
+        colors[i].Emissive = voxScene->materials.matl[i].emit;
+    }
 
     std::vector<VoxelModel> models;
     // Keep track of the total size needed for the buffer
@@ -42,9 +42,9 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
 
         glm::mat4 modelTransform = instanceTransform * groupTransform;
 
-        const uint32_t sizeX = model->size_x;
-        const uint32_t sizeY = model->size_y;
-        const uint32_t sizeZ = model->size_z;
+        const int32_t sizeX = model->size_x;
+        const int32_t sizeY = model->size_y;
+        const int32_t sizeZ = model->size_z;
 
         voxelModel.Size = glm::vec3(sizeX, sizeY, sizeZ);
 
@@ -54,70 +54,53 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
         voxelModel.Transform = glm::transpose(modelTransform);
 
         // Iterate over the voxels in the model
-        for (uint32_t x = 0; x < sizeX; x++)
+        for (int32_t x = 0; x < sizeX; x++)
         {
-            for (uint32_t y = 0; y < sizeY; y++)
+            for (int32_t y = 0; y < sizeY; y++)
             {
-                for (uint32_t z = 0; z < sizeZ; z++)
+                for (int32_t z = 0; z < sizeZ; z++)
                 {
+                    Voxel& voxel = voxelModel.Voxels.emplace_back();
+
                     uint8_t color = model->voxel_data[x + y * sizeX + z * sizeX * sizeY];
                     if (color != 0)
                     {
-                        const float voxSize = 0.5;
+                        voxel.ColorIndex = color;
+                        voxel.Distance = 0;
+                        continue;
+                    }
 
-                        glm::vec3 mid = glm::vec3(x, y, z);
+                    // Find the nearest distance to the surface
+                    voxel.Distance = UINT8_MAX;
+                    uint32_t startX = std::max(0, x - UINT8_MAX);
+                    uint32_t startY = std::max(0, y - UINT8_MAX);
+                    uint32_t startZ = std::max(0, z - UINT8_MAX);
 
-                        auto& aabb = voxelModel.AABBs.emplace_back();
-                        aabb.ColorIndex = color;
-                        aabb.Max = mid + glm::vec3(voxSize);
-                        aabb.Min = mid - glm::vec3(voxSize);
+                    uint32_t endX = std::min(sizeX, x + UINT8_MAX);
+                    uint32_t endY = std::min(sizeY, y + UINT8_MAX);
+                    uint32_t endZ = std::min(sizeZ, z + UINT8_MAX);
+
+                    for (uint32_t i = startX; i < endX; i++)
+                    {
+                        for (uint32_t j = startY; j < endY; j++)
+                        {
+                            for (uint32_t k = startZ; k < endZ; k++)
+                            {
+                                uint8_t color = model->voxel_data[i + j * sizeX + k * sizeX * sizeY];
+                                if (color != 0)
+                                {
+                                    uint32_t distance = glm::distance(glm::vec3(x, y, z), glm::vec3(i, j, k));
+                                    voxel.Distance = std::min(voxel.Distance, (uint8_t)distance);
+                                }
+                            }
+                        }
                     }
                 }
             }
         }
     }
 
-    glm::vec3* sizes = (glm::vec3*)device->MapAllocationForWrite(scene->SizeBuffer);
-    for (auto& model : models)
-    {
-        // All the AABBs for the model
-        auto allocDesc = CD3DX12_RESOURCE_DESC::Buffer(model.AABBs.size() * sizeof(VoxAABB),
-                                                       D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-        auto& modelBuffer = scene->ModelBuffers.emplace_back(
-            device->AllocateResource(allocDesc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD));
-
-        uint8_t* aabbs = (uint8_t*)device->MapAllocationForWrite(modelBuffer);
-        uint64_t gpuAddress = modelBuffer->GetResource()->GetGPUVirtualAddress();
-
-        auto& blas = scene->BLASDescs.emplace_back();
-        blas.Geometries.push_back(D3D12_RAYTRACING_GEOMETRY_DESC {
-            .Type = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS,
-            .Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE,
-            .AABBs =
-                D3D12_RAYTRACING_GEOMETRY_AABBS_DESC {
-                    .AABBCount = model.AABBs.size(),
-                    .AABBs = D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE {.StartAddress = gpuAddress,
-                                                                   .StrideInBytes = sizeof(VoxAABB)}},
-        });
-
-        memcpy(aabbs, model.AABBs.data(), model.AABBs.size() * sizeof(VoxAABB));
-        memcpy(sizes, glm::value_ptr(model.Size), sizeof(glm::vec3));
-        sizes++; // Move to the next size
-
-        // Create the BLAS
-        scene->BLAS.push_back(device->AllocateAccelerationStructure(blas));
-
-        // SRV for the AABB buffer
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
-        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        srvDesc.Buffer.FirstElement = 0;
-        srvDesc.Buffer.NumElements = model.AABBs.size();
-        srvDesc.Buffer.StructureByteStride = sizeof(VoxAABB);
-        srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
-
-        scene->AABBViews.push_back(srvDesc);
-    }
+    for (auto& model : models) {}
 
     // Create TLAS for the models
     scene->InstanceBuffer = device->AllocateInstanceBuffer(models.size(), D3D12_HEAP_TYPE_GPU_UPLOAD);
@@ -157,7 +140,7 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
     return scene;
 }
 
-void AxisAlignedIntersection::Start()
+void DistanceFieldIntersection::Start()
 {
     // Write the header to the file
     mPerformanceData.reserve(100);
@@ -165,20 +148,30 @@ void AxisAlignedIntersection::Start()
     mPerformanceFile << "Frame (n),Performance Time (ms)" << std::endl;
 
     // Create the pipeline
-    auto dxil = mShaderCompiler.CompileFromFile("Shaders/AxisAlignedIntersection.hlsl");
-    assert(dxil != nullptr);
-    CD3DX12_SHADER_BYTECODE shader {dxil->GetBufferPointer(), dxil->GetBufferSize()};
+    auto dxilAxisAligned = mShaderCompiler.CompileFromFile("Shaders/DistanceFieldIntersection.hlsl");
+    auto dxilCommon = mShaderCompiler.CompileFromFile("Shaders/CommonShaders.hlsl");
+    assert(dxilAxisAligned != nullptr);
+    assert(dxilCommon != nullptr);
+    CD3DX12_SHADER_BYTECODE shaderAxisAligned {dxilAxisAligned->GetBufferPointer(), dxilAxisAligned->GetBufferSize()};
+    CD3DX12_SHADER_BYTECODE shaderCommon {dxilCommon->GetBufferPointer(), dxilCommon->GetBufferSize()};
 
     // Create the root signature
-    mDXDevice->CreateRootSignature(0, shader.pShaderBytecode, shader.BytecodeLength, IID_PPV_ARGS(&mRootSig));
+    mDXDevice->CreateRootSignature(0, shaderCommon.pShaderBytecode, shaderCommon.BytecodeLength,
+                                   IID_PPV_ARGS(&mRootSig));
 
     CD3DX12_STATE_OBJECT_DESC rtPipeline(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
 
     // Add the DXIL library
     auto* lib = rtPipeline.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>();
-    lib->SetDXILLibrary(&shader);
+    lib->SetDXILLibrary(&shaderCommon);
     lib->DefineExport(L"rgen");
     lib->DefineExport(L"miss");
+    lib->DefineExport(L"ShaderConfig");
+    lib->DefineExport(L"PipelineConfig");
+    lib->DefineExport(L"RootSig");
+
+    lib = rtPipeline.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>();
+    lib->SetDXILLibrary(&shaderAxisAligned);
     lib->DefineExport(L"chit");
     lib->DefineExport(L"isect");
     lib->DefineExport(L"AABBHitGroup");
@@ -196,7 +189,9 @@ void AxisAlignedIntersection::Start()
     mDevice->CreateShaderTable(mShaderTable, D3D12_HEAP_TYPE_GPU_UPLOAD, mPipeline);
 
     // Create AS
-    mScene = LoadAsAABBs(mDevice, "Assets/CountrySide_Source.vox");
+    mScene = LoadAsAABBs(mDevice, "Assets/cavern.vox");
+
+    std::cout << "Number of Voxels: " << mScene->NumVoxels << std::endl;
 
     // Build the acceleration structures
     THROW_IF_FAILED(mCommandAllocators[mBackBufferIndex]->Reset());
@@ -250,28 +245,18 @@ void AxisAlignedIntersection::Start()
     // Color buffer
     D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
     srvDesc.ViewDimension = D3D12_SRV_DIMENSION_BUFFER;
-    srvDesc.Format = DXGI_FORMAT_R32_TYPELESS;
     srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
     srvDesc.Buffer.FirstElement = 0;
     srvDesc.Buffer.NumElements = 256;
-    srvDesc.Buffer.StructureByteStride = 0;
-    srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_RAW;
+    srvDesc.Buffer.StructureByteStride = sizeof(VoxMaterial);
+    srvDesc.Buffer.Flags = D3D12_BUFFER_SRV_FLAG_NONE;
 
     mDXDevice->CreateShaderResourceView(mScene->ColorBuffer->GetResource(), &srvDesc, cpuHandle);
 
     cpuHandle.Offset(1, mResourceDescriptorSize);
-
-    for (uint32_t i = 0; i < mScene->ModelBuffers.size(); i++)
-    {
-        D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = mScene->AABBViews[i];
-        auto& modelBuffer = mScene->ModelBuffers[i];
-
-        mDXDevice->CreateShaderResourceView(modelBuffer->GetResource(), &srvDesc, cpuHandle);
-        cpuHandle.Offset(1, mResourceDescriptorSize);
-    }
 }
 
-void AxisAlignedIntersection::Update()
+void DistanceFieldIntersection::Update()
 {
     mCommandList->SetPipelineState1(mPipeline.Get());
 
@@ -317,7 +302,7 @@ void AxisAlignedIntersection::Update()
     }
 }
 
-void AxisAlignedIntersection::WritePerformanceData()
+void DistanceFieldIntersection::WritePerformanceData()
 {
     for (auto& data : mPerformanceData)
     {
@@ -326,7 +311,7 @@ void AxisAlignedIntersection::WritePerformanceData()
     mPerformanceData.clear();
 }
 
-void AxisAlignedIntersection::Stop()
+void DistanceFieldIntersection::Stop()
 {
     // Write the performance data to the file
     WritePerformanceData();
@@ -338,7 +323,7 @@ int main()
     // Create the application, start it, run it and stop it, boierplate code, eg initialising vulkan, glfw, etc
     // that is the same for every application is handled by the Application class
     // it can be found in the Base folder
-    Application* app = new AxisAlignedIntersection();
+    Application* app = new DistanceFieldIntersection();
 
     app->Run();
 

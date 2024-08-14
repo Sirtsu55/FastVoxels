@@ -29,10 +29,10 @@ public:
     float NearPlane;    // Near clipping plane
     float FarPlane;     // Far clipping plane
 
-    float Sensitivity = 75000.0f; // Pitch and Yaw sensitivity
+    float Sensitivity = 50000.0f; // Pitch and Yaw sensitivity
 
     float RollSensitivity = 100.0f; // Roll sensitivity
-    float Speed = 25.0f;            // Camera movement speed
+    float Speed = 100.0f;           // Camera movement speed
 
     glm::vec3 Front = glm::vec3(0.0, 0.0, -1.0);
     glm::vec3 Right = glm::vec3(1.0, 0.0, 0.0);

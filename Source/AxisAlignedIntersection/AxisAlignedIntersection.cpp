@@ -8,7 +8,7 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
     auto scene = std::make_shared<VoxelScene>();
 
     std::vector<uint8_t> rawVox;
-    FileRead("Assets/grave.vox", rawVox);
+    FileRead(voxFile, rawVox);
     auto voxScene = ogt_vox_read_scene(rawVox.data(), rawVox.size());
     rawVox.clear();
 
@@ -26,13 +26,6 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
         colors[i].Color = *(uint32_t*)&voxScene->palette.color[i];
         colors[i].Emissive = voxScene->materials.matl[i].emit;
     }
-
-    memcpy(colors, voxScene->palette.color, 256 * sizeof(uint32_t));
-
-    auto sizeBufferDesc = CD3DX12_RESOURCE_DESC::Buffer(voxScene->num_instances * sizeof(glm::vec4),
-                                                        D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
-    scene->SizeBuffer =
-        device->AllocateResource(sizeBufferDesc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD);
 
     std::vector<VoxelModel> models;
     // Keep track of the total size needed for the buffer
@@ -78,13 +71,14 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
                         aabb.ColorIndex = color;
                         aabb.Max = mid + glm::vec3(voxSize);
                         aabb.Min = mid - glm::vec3(voxSize);
+
+                        scene->NumVoxels++;
                     }
                 }
             }
         }
     }
 
-    glm::vec3* sizes = (glm::vec3*)device->MapAllocationForWrite(scene->SizeBuffer);
     for (auto& model : models)
     {
         // All the AABBs for the model
@@ -108,8 +102,6 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
         });
 
         memcpy(aabbs, model.AABBs.data(), model.AABBs.size() * sizeof(VoxAABB));
-        memcpy(sizes, glm::value_ptr(model.Size), sizeof(glm::vec3));
-        sizes++; // Move to the next size
 
         // Create the BLAS
         scene->BLAS.push_back(device->AllocateAccelerationStructure(blas));
@@ -213,7 +205,9 @@ void AxisAlignedIntersection::Start()
     mDevice->CreateShaderTable(mShaderTable, D3D12_HEAP_TYPE_GPU_UPLOAD, mPipeline);
 
     // Create AS
-    mScene = LoadAsAABBs(mDevice, "Assets/CountrySide_Source.vox");
+    mScene = LoadAsAABBs(mDevice, "Assets/cavern.vox");
+
+    std::cout << "Number of Voxels: " << mScene->NumVoxels << std::endl;
 
     // Build the acceleration structures
     THROW_IF_FAILED(mCommandAllocators[mBackBufferIndex]->Reset());
