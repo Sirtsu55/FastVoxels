@@ -3,6 +3,8 @@
 #include "FileRead.h"
 #include "ogt_vox.h"
 
+#define MAX_STEP 3
+
 std::shared_ptr<VoxelScene> LoadAsDistanceField(std::shared_ptr<DXR::Device> device, const std::string& voxFile)
 {
     auto scene = std::make_shared<VoxelScene>();
@@ -53,6 +55,8 @@ std::shared_ptr<VoxelScene> LoadAsDistanceField(std::shared_ptr<DXR::Device> dev
         modelTransform = glm::translate(modelTransform, trans);
         voxelModel.Transform = glm::transpose(modelTransform);
 
+        voxelModel.Voxels.resize(sizeX * sizeY * sizeZ);
+
         // Iterate over the voxels in the model
         for (int32_t x = 0; x < sizeX; x++)
         {
@@ -60,25 +64,28 @@ std::shared_ptr<VoxelScene> LoadAsDistanceField(std::shared_ptr<DXR::Device> dev
             {
                 for (int32_t z = 0; z < sizeZ; z++)
                 {
-                    Voxel& voxel = voxelModel.Voxels.emplace_back();
+                    uint32_t index = x + y * sizeX + z * sizeX * sizeY;
 
-                    uint8_t color = model->voxel_data[x + y * sizeX + z * sizeX * sizeY];
+                    Voxel& voxel = voxelModel.Voxels[index];
+
+                    uint8_t color = model->voxel_data[index];
                     if (color != 0)
                     {
                         voxel.ColorIndex = color;
                         voxel.Distance = 0;
+                        scene->NumVoxels++;
                         continue;
                     }
 
                     // Find the nearest distance to the surface
-                    voxel.Distance = UINT8_MAX;
-                    uint32_t startX = std::max(0, x - UINT8_MAX);
-                    uint32_t startY = std::max(0, y - UINT8_MAX);
-                    uint32_t startZ = std::max(0, z - UINT8_MAX);
+                    voxel.Distance = MAX_STEP;
+                    uint32_t startX = std::max(0, x - MAX_STEP);
+                    uint32_t startY = std::max(0, y - MAX_STEP);
+                    uint32_t startZ = std::max(0, z - MAX_STEP);
 
-                    uint32_t endX = std::min(sizeX, x + UINT8_MAX);
-                    uint32_t endY = std::min(sizeY, y + UINT8_MAX);
-                    uint32_t endZ = std::min(sizeZ, z + UINT8_MAX);
+                    uint32_t endX = std::min(sizeX, x + MAX_STEP);
+                    uint32_t endY = std::min(sizeY, y + MAX_STEP);
+                    uint32_t endZ = std::min(sizeZ, z + MAX_STEP);
 
                     for (uint32_t i = startX; i < endX; i++)
                     {
@@ -90,17 +97,69 @@ std::shared_ptr<VoxelScene> LoadAsDistanceField(std::shared_ptr<DXR::Device> dev
                                 if (color != 0)
                                 {
                                     uint32_t distance = glm::distance(glm::vec3(x, y, z), glm::vec3(i, j, k));
-                                    voxel.Distance = std::min(voxel.Distance, (uint8_t)distance);
+
+                                    voxel.Distance = std::min(voxel.Distance, distance);
+
+                                    if (distance == 1) // This is the minimum distance
+                                    {
+                                        goto end;
+                                    }
                                 }
                             }
                         }
                     }
+                end:;
                 }
             }
         }
     }
 
-    for (auto& model : models) {}
+    CD3DX12_RESOURCE_DESC desc = CD3DX12_RESOURCE_DESC::Buffer(models.size() * sizeof(D3D12_RAYTRACING_AABB),
+                                                               D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+
+    scene->AABBBuffer = device->AllocateResource(desc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD);
+    D3D12_GPU_VIRTUAL_ADDRESS aabbGPUAddr = scene->AABBBuffer->GetResource()->GetGPUVirtualAddress();
+    D3D12_RAYTRACING_AABB* aabbData = (D3D12_RAYTRACING_AABB*)device->MapAllocationForWrite(scene->AABBBuffer);
+
+    for (uint32_t i = 0; i < models.size(); i++)
+    {
+        auto& model = models[i];
+        D3D12_RAYTRACING_AABB& aabb = aabbData[i];
+
+        // Create Distance Field 3D Textures
+        CD3DX12_RESOURCE_DESC desc =
+            CD3DX12_RESOURCE_DESC::Tex3D(DXGI_FORMAT_R32_UINT, model.Size.x, model.Size.y, model.Size.z, 1,
+                                         D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
+        auto& tex = scene->DistanceFieldTextures.emplace_back(
+            device->AllocateResource(desc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD));
+
+        tex->GetResource()->WriteToSubresource(0, nullptr, model.Voxels.data(), model.Size.x * sizeof(Voxel),
+                                               model.Size.x * model.Size.y * sizeof(Voxel));
+
+        // Create the AABBs
+
+        aabb.MinX = 0;
+        aabb.MinY = 0;
+        aabb.MinZ = 0;
+        aabb.MaxX = model.Size.x;
+        aabb.MaxY = model.Size.y;
+        aabb.MaxZ = model.Size.z;
+
+        auto& blas = scene->BLASDescs.emplace_back();
+        blas.Geometries.push_back(D3D12_RAYTRACING_GEOMETRY_DESC {
+            .Type = D3D12_RAYTRACING_GEOMETRY_TYPE_PROCEDURAL_PRIMITIVE_AABBS,
+            .Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE,
+            .AABBs =
+                D3D12_RAYTRACING_GEOMETRY_AABBS_DESC {
+                    .AABBCount = 1,
+                    .AABBs = D3D12_GPU_VIRTUAL_ADDRESS_AND_STRIDE {.StartAddress =
+                                                                       aabbGPUAddr + i * sizeof(D3D12_RAYTRACING_AABB),
+                                                                   .StrideInBytes = sizeof(D3D12_RAYTRACING_AABB)}},
+        });
+
+        // Create the BLAS
+        scene->BLAS.push_back(device->AllocateAccelerationStructure(blas));
+    }
 
     // Create TLAS for the models
     scene->InstanceBuffer = device->AllocateInstanceBuffer(models.size(), D3D12_HEAP_TYPE_GPU_UPLOAD);
@@ -112,7 +171,7 @@ std::shared_ptr<VoxelScene> LoadAsDistanceField(std::shared_ptr<DXR::Device> dev
     {
         auto& model = models[i];
 
-        instances[i].InstanceID = i; // this is the buffer index
+        instances[i].InstanceID = i; // this is the AABB index
         instances[i].InstanceContributionToHitGroupIndex = 0;
         instances[i].InstanceMask = 0xFF;
         instances[i].Flags = D3D12_RAYTRACING_INSTANCE_FLAG_FORCE_OPAQUE;
@@ -125,8 +184,8 @@ std::shared_ptr<VoxelScene> LoadAsDistanceField(std::shared_ptr<DXR::Device> dev
     // Create the TLAS
     scene->TLASDesc.Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
     scene->TLASDesc.vpInstanceDescs = scene->InstanceBuffer->GetResource()->GetGPUVirtualAddress();
-    scene->TLASDesc.NumInstanceDescs = models.size();
 
+    scene->TLASDesc.NumInstanceDescs = models.size();
     scene->TLAS = device->AllocateAccelerationStructure(scene->TLASDesc);
 
     // Scratch buffer for BLAS
@@ -189,7 +248,7 @@ void DistanceFieldIntersection::Start()
     mDevice->CreateShaderTable(mShaderTable, D3D12_HEAP_TYPE_GPU_UPLOAD, mPipeline);
 
     // Create AS
-    mScene = LoadAsAABBs(mDevice, "Assets/cavern.vox");
+    mScene = LoadAsDistanceField(mDevice, "Assets/cavern.vox");
 
     std::cout << "Number of Voxels: " << mScene->NumVoxels << std::endl;
 
@@ -254,8 +313,26 @@ void DistanceFieldIntersection::Start()
     mDXDevice->CreateShaderResourceView(mScene->ColorBuffer->GetResource(), &srvDesc, cpuHandle);
 
     cpuHandle.Offset(1, mResourceDescriptorSize);
-}
 
+    // AABB Buffer
+    srvDesc.Buffer.NumElements = mScene->BLAS.size();
+    srvDesc.Buffer.StructureByteStride = sizeof(D3D12_RAYTRACING_AABB);
+    mDXDevice->CreateShaderResourceView(mScene->AABBBuffer->GetResource(), &srvDesc, cpuHandle);
+
+    // Distance Field Textures SRVs
+    for (auto& texture : mScene->DistanceFieldTextures)
+    {
+        cpuHandle.Offset(1, mResourceDescriptorSize);
+
+        srvDesc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE3D;
+        srvDesc.Format = DXGI_FORMAT_R32_UINT;
+        srvDesc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+        srvDesc.Texture3D.MipLevels = 1;
+        srvDesc.Texture3D.MostDetailedMip = 0;
+        srvDesc.Texture3D.ResourceMinLODClamp = 0.0f;
+        mDXDevice->CreateShaderResourceView(texture->GetResource(), &srvDesc, cpuHandle);
+    }
+}
 void DistanceFieldIntersection::Update()
 {
     mCommandList->SetPipelineState1(mPipeline.Get());

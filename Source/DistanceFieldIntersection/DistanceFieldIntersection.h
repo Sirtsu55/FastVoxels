@@ -11,8 +11,8 @@ struct PerformanceData
 
 struct Voxel
 {
-    uint8_t Distance;
-    uint8_t ColorIndex = 0;
+    uint32_t Distance : 4;
+    uint32_t ColorIndex : 28;
 };
 
 struct VoxMaterial
@@ -33,6 +33,7 @@ struct VoxelScene
     std::vector<ComPtr<DMA::Allocation>> DistanceFieldTextures;
 
     ComPtr<DMA::Allocation> ColorBuffer;
+    ComPtr<DMA::Allocation> AABBBuffer;
 
     std::vector<DXR::AccelerationStructureDesc> BLASDescs;
     DXR::AccelerationStructureDesc TLASDesc;

@@ -4,14 +4,6 @@ static const uint SceneConstantsIndex = 0;
 static const uint OutputBufferIndex = 1;
 static const uint AccumulationBufferIndex = 2;
 
-struct AABB
-{
-    float3 Min;
-    float3 Max;
-    uint ColorIndex;
-    uint Padding;
-};
-
 struct HitInfo
 {
     float T;

@@ -9,9 +9,17 @@ struct VoxMaterial
     float Emission;
 };
 
+struct AABB
+{
+    float3 Min;
+    float3 Max;
+    uint ColorIndex;
+    uint Padding;
+};
+
 AABB GetAABB()
 {
-    StructuredBuffer<AABB> buf = ResourceDescriptorHeap[AABBBufferIndexStart + InstanceID()];
+    StructuredBuffer<AABB> buf = ResourceDescriptorHeap[NonUniformResourceIndex(AABBBufferIndexStart + InstanceID())];
     
     return buf[PrimitiveIndex()];
 }
