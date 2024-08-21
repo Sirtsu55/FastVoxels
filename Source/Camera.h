@@ -20,6 +20,7 @@ public:
     void MoveForward(float distance);
 
     void Rotate(float pitch, float yaw, float roll);
+    void SetRotation(float pitch, float yaw, float roll);
     void Rotate(const glm::quat& rotation);
 
     glm::vec3 Position; // Camera position

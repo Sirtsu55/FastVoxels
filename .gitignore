@@ -7,8 +7,9 @@ build/
 .vs/
 
 # Scenes
-Assets/
-
 Deps/DXRay/Deps
+
+# Python venv in Scripts/
+Scripts/.venv/
 
 

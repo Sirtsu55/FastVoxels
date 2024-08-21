@@ -15,6 +15,6 @@ RayDesc ConstructRay(in float4x4 vInv, in float4x4 pInv, uint seed)
 	rayDesc.Origin = mul(vInv, float4(0,0,0,1)).xyz;
 	rayDesc.Direction = normalize(mul(vInv, float4(normalize(target.xyz), 0)).xyz);
 	rayDesc.TMin = 0.1;
-	rayDesc.TMax = 1000.0;
+	rayDesc.TMax = 10000.0;
     return rayDesc;
 }

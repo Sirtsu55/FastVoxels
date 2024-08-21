@@ -12,6 +12,7 @@ Application::Application()
 
     // Create Factory
     uint32_t dxgiFactoryFlags = 0;
+
 #if defined(_DEBUG)
     dxgiFactoryFlags |= DXGI_CREATE_FACTORY_DEBUG;
 #endif
@@ -166,7 +167,7 @@ Application::Application()
     // Create Resource Heap
     D3D12_DESCRIPTOR_HEAP_DESC resourceHeapDesc = {};
     resourceHeapDesc.NodeMask = 0;
-    resourceHeapDesc.NumDescriptors = 1'000'000;
+    resourceHeapDesc.NumDescriptors = 1'000;
     resourceHeapDesc.Type = D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;
     resourceHeapDesc.Flags = D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;
 
@@ -288,14 +289,33 @@ void Application::HandleIO()
     }
     if (glfwGetKey(mWindow, GLFW_KEY_E) == GLFW_PRESS)
     {
-        mSceneLightIntensity += 1.0f * DeltaTime * 50.0f;
+        mSceneLightIntensity += DeltaTime * 10.0f;
         mPassiveFrameCount = 0;
     }
     if (glfwGetKey(mWindow, GLFW_KEY_Q) == GLFW_PRESS)
     {
-        mSceneLightIntensity -= 1.0f * DeltaTime * 50.0f;
+        mSceneLightIntensity -= DeltaTime * 10.0f;
         mPassiveFrameCount = 0;
     }
+    if (glfwGetKey(mWindow, GLFW_KEY_Z) == GLFW_PRESS)
+    {
+        mSkyBrightness -= DeltaTime;
+        mPassiveFrameCount = 0;
+    }
+    if (glfwGetKey(mWindow, GLFW_KEY_X) == GLFW_PRESS)
+    {
+        mSkyBrightness += DeltaTime;
+        mPassiveFrameCount = 0;
+    }
+    if (glfwGetKey(mWindow, GLFW_KEY_SPACE) == GLFW_PRESS)
+    {
+        // Print the camera position
+        const glm::vec3& pos = mCamera.Position;
+        std::cout << "Camera Position: " << pos.x << ", " << pos.y << ", " << pos.z << std::endl;
+    }
+
+    mSceneLightIntensity = std::max(0.0f, mSceneLightIntensity);
+    mSkyBrightness = std::max(0.0f, mSkyBrightness);
 
     glm::mat4 view = mCamera.GetViewMatrix();
 
@@ -315,6 +335,7 @@ void Application::HandleIO()
     uniformExtraInfo[0] = mPassiveFrameCount;
     uniformExtraInfo[1] = *(uint32_t*)&time;                 // type punning
     uniformExtraInfo[2] = *(uint32_t*)&mSceneLightIntensity; // type punning
+    uniformExtraInfo[3] = *(uint32_t*)&mSkyBrightness;       // type punning
 
     CHAR* data = mStagingDatas[mBackBufferIndex];
 

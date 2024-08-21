@@ -16,9 +16,9 @@ public:
 
     virtual void Stop() {};
 
-    void BeginFrame();
+    virtual void BeginFrame();
 
-    void EndFrame();
+    virtual void EndFrame();
 
     void HandleIO();
 
@@ -75,6 +75,7 @@ protected:
 
     Camera mCamera;
     float mSceneLightIntensity = 1.0f;
+    float mSkyBrightness = 1.0f;
 
     glm::dvec2 mMousePos = {0.0f, 0.0f};
     glm::dvec2 mMouseDelta = {0.0f, 0.0f};
