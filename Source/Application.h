@@ -84,6 +84,7 @@ protected:
     float MovementSpeed = 1.0f;
 
     float DeltaTime = 0.0f;
+    float TitleUpdateTime = 0.0f;
 
     UINT64 mFrameCount = 0;
     UINT64 mPassiveFrameCount = 0;

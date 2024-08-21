@@ -1,8 +1,5 @@
 #include "Shaders/Common/Common.hlsl"
 
-static const uint SceneConstantsIndex = 0;
-static const uint OutputBufferIndex = 1;
-static const uint AccumulationBufferIndex = 2;
 static const uint ColorBufferIndex = 3;
 static const uint AABBBufferIndexStart = 4;
 
@@ -12,12 +9,19 @@ struct VoxMaterial
     float Emission;
 };
 
+struct AABB
+{
+    float3 Min;
+    float3 Max;
+    uint ColorIndex;
+    uint Padding;
+};
+
 AABB GetAABB()
 {
     StructuredBuffer<AABB> buf = ResourceDescriptorHeap[NonUniformResourceIndex(AABBBufferIndexStart + InstanceID())];
     
     return buf[PrimitiveIndex()];
-
 }
 
 VoxMaterial GetColor(uint index)
@@ -80,48 +84,6 @@ HitInfo getHitInfo(in AABB voxel)
     info.Normal = mul((float3x3) ObjectToWorld3x4(), info.Normal);
     
     return info;
-}
-
-
-[shader("raygeneration")]
-void rgen()
-{
-    ConstantBuffer<SceneInfo> sceneInfo = ResourceDescriptorHeap[SceneConstantsIndex];
-    RWTexture2D<float4> outImage = ResourceDescriptorHeap[OutputBufferIndex];
-    RWTexture2D<float4> accumImage = ResourceDescriptorHeap[AccumulationBufferIndex];
-   
-    
-    const uint3 LaunchID = DispatchRaysIndex();
-    const uint3 LaunchSize = DispatchRaysDimensions();
-
-    uint seed = asuint(LaunchID.x) * asuint(LaunchID.y) * asuint(sceneInfo.otherInfo.y);
-    RayDesc rayDesc = ConstructRay(sceneInfo.View, sceneInfo.Proj, seed);
-
-    Payload p;
-    p.HitColor = 1;
-    
-    for (uint i = 0; i < 4; i++)
-    {
-        TraceRay(rs, RAY_FLAG_FORCE_OPAQUE, 0xff, 0, 0, 0, rayDesc, p);
-        if(p.T == -1.0f)
-            break;
-        
-        rayDesc.Origin = rayDesc.Origin + p.T * rayDesc.Direction;
-        rayDesc.Direction = normalize(p.RayDirection);
-    }
-    
-    const int2 index = int2(LaunchID.xy);
-    float3 Radiance = p.HitColor * p.Emission;
-    
-    if (any(isnan(Radiance)) || any(isinf(Radiance)))
-        Radiance = float3(0.0, 0.0, 0.0);
-    
-    uint frameCount = asuint(sceneInfo.otherInfo.x);
-    float4 accum = accumImage[index];
-    accum.rgb = frameCount == 0 ? Radiance : accum.rgb + Radiance;
-    
-    accumImage[index] = accum;
-    outImage[index] = accum / float(frameCount + 1);
 }
 
 [shader("intersection")]
