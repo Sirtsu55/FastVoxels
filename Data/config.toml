@@ -1,2 +1,3 @@
-scene = "nyc"
+scene = "Church"
 benchmark_frames = 4096
+shader_file = "NotOptimized"

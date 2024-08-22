@@ -1,0 +1,11 @@
+[Scene]
+sky_brightness = 1.0
+light_intensity = 1.0
+
+[Camera]
+x = 405
+y = 85
+z = 334
+pitch = 23
+yaw = -53
+speed = 100

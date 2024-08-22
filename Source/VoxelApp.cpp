@@ -159,8 +159,11 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
 
 void AxisAlignedIntersection::Start()
 {
+    auto config = toml::parse_file("Data/config.toml");
+
     // Create the pipeline
-    auto dxil = mShaderCompiler.CompileFromFile("Shaders/Shader.hlsl");
+    std::string_view file = config["shader_file"].value_or("");
+    auto dxil = mShaderCompiler.CompileFromFile("Shaders/" + std::string(file) + ".hlsl");
     assert(dxil != nullptr);
     CD3DX12_SHADER_BYTECODE dxilCode {dxil->GetBufferPointer(), dxil->GetBufferSize()};
 
@@ -192,28 +195,30 @@ void AxisAlignedIntersection::Start()
 
     // Create AS
     {
-        auto config = toml::parse_file("Data/config.toml");
         std::string_view scene = config["scene"].value_or("");
         mScene = LoadAsAABBs(mDevice, "Data/" + std::string(scene) + ".vox");
         mBenchmarkFrameCount = config["benchmark_frames"].value_or(UINT16_MAX);
         mPerformanceData.reserve(mBenchmarkFrameCount);
 
         auto sceneConfig = toml::parse_file("Data/" + std::string(scene) + ".toml");
+
+        mSceneLightIntensity = sceneConfig["Scene"]["light_intensity"].value_or(1.0);
+        mSkyBrightness = sceneConfig["Scene"]["sky_brightness"].value_or(1.0);
+
         mCamera.Position.x = sceneConfig["Camera"]["x"].value_or(0.0);
         mCamera.Position.y = sceneConfig["Camera"]["y"].value_or(0.0);
         mCamera.Position.z = sceneConfig["Camera"]["z"].value_or(0.0);
+        mCamera.Fov = sceneConfig["Camera"]["fov"].value_or(45.0);
 
         float pitch = sceneConfig["Camera"]["pitch"].value_or(0.0);
         float yaw = sceneConfig["Camera"]["yaw"].value_or(0.0);
-
         float roll = sceneConfig["Camera"]["roll"].value_or(0.0);
         mCamera.SetRotation(pitch, yaw, roll);
-
         mCamera.Speed = sceneConfig["Camera"]["speed"].value_or(25.0);
 
         // Performance File
         // Write the header to the file
-        mPerformanceFile.open(std::string(scene) + ".csv", std::ios::out);
+        mPerformanceFile.open(std::string(scene) + "-" + std::string(file) + ".csv", std::ios::out);
         mPerformanceFile << "Frame,FrameTime" << std::endl;
     }
 

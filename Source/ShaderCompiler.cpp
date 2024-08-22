@@ -10,7 +10,6 @@ ShaderCompiler::ShaderCompiler()
     mUtils->CreateDefaultIncludeHandler(&mIncludeHandler);
 }
 
-
 ComPtr<IDxcBlob> ShaderCompiler::CompileFromSource(const std::vector<char>& source)
 {
     ComPtr<IDxcBlobEncoding> pSource;
@@ -33,9 +32,10 @@ ComPtr<IDxcBlob> ShaderCompiler::CompileFromSource(const std::vector<char>& sour
     sourceBuffer.Encoding = 0;
 
     ComPtr<IDxcResult> pCompileResult;
-    mCompiler->Compile(&sourceBuffer, arguments.data(), (uint32_t)arguments.size(), mIncludeHandler.Get(), IID_PPV_ARGS(&pCompileResult));
+    mCompiler->Compile(&sourceBuffer, arguments.data(), (uint32_t)arguments.size(), mIncludeHandler.Get(),
+                       IID_PPV_ARGS(&pCompileResult));
 
-    //Error Handling
+    // Error Handling
     ComPtr<IDxcBlobUtf8> pErrors;
     pCompileResult->GetOutput(DXC_OUT_ERRORS, IID_PPV_ARGS(&pErrors), nullptr);
 
@@ -47,13 +47,13 @@ ComPtr<IDxcBlob> ShaderCompiler::CompileFromSource(const std::vector<char>& sour
     ComPtr<IDxcBlob> pDxil;
     pCompileResult->GetResult(&pDxil);
 
-	if (pDxil->GetBufferSize() == 0)
+    if (pDxil->GetBufferSize() == 0)
     {
         std::printf("Failed to compile shader");
         return {};
     }
 
-	return pDxil;
+    return pDxil;
 }
 
 ComPtr<IDxcBlob> ShaderCompiler::CompileFromFile(const std::string& file)
