@@ -1,12 +1,12 @@
 [Scene]
 sky_brightness = 0.0
-light_intensity = 25.0
+light_intensity = 40.0
 
 [Camera]
-x = -120
-y = 642
-z = 346
-pitch = 33
+x = -140
+y = 20
+z = 290
+pitch = -20
 yaw = 0
 speed = 500
 fov = 90
