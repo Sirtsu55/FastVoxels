@@ -88,6 +88,8 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
         auto& modelBuffer = scene->ModelBuffers.emplace_back(
             device->AllocateResource(allocDesc, D3D12_RESOURCE_STATE_COMMON, D3D12_HEAP_TYPE_GPU_UPLOAD));
 
+        scene->BuffersMemoryConsumption += modelBuffer->GetSize();
+
         uint8_t* aabbs = (uint8_t*)device->MapAllocationForWrite(modelBuffer);
         uint64_t gpuAddress = modelBuffer->GetResource()->GetGPUVirtualAddress();
 
@@ -105,7 +107,8 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
         memcpy(aabbs, model.AABBs.data(), model.AABBs.size() * sizeof(VoxAABB));
 
         // Create the BLAS
-        scene->BLAS.push_back(device->AllocateAccelerationStructure(blas));
+        auto& allocBLAS = scene->BLAS.emplace_back(device->AllocateAccelerationStructure(blas));
+        scene->ASMemoryConsumption += allocBLAS->GetSize();
 
         // SRV for the AABB buffer
         D3D12_SHADER_RESOURCE_VIEW_DESC srvDesc = {};
@@ -145,6 +148,7 @@ std::shared_ptr<VoxelScene> LoadAsAABBs(std::shared_ptr<DXR::Device> device, con
     scene->TLASDesc.NumInstanceDescs = models.size();
 
     scene->TLAS = device->AllocateAccelerationStructure(scene->TLASDesc);
+    scene->ASMemoryConsumption += scene->TLAS->GetSize();
 
     // Scratch buffer for BLAS
     scene->ScratchBufferBLAS = device->AllocateAndAssignScratchBuffer(scene->BLASDescs);
@@ -223,6 +227,8 @@ void AxisAlignedIntersection::Start()
     }
 
     std::cout << "Number of Voxels: " << mScene->NumVoxels << std::endl;
+    std::cout << "Acceleration Structure Memory Consumption: " << mScene->ASMemoryConsumption << " Bytes" << std::endl;
+    std::cout << "Buffers Memory Consumption: " << mScene->BuffersMemoryConsumption << " Bytes" << std::endl;
 
     // Build the acceleration structures
     THROW_IF_FAILED(mCommandAllocators[mBackBufferIndex]->Reset());

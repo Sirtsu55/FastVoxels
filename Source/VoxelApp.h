@@ -49,6 +49,8 @@ struct VoxelScene
     std::vector<D3D12_SHADER_RESOURCE_VIEW_DESC> AABBViews;
 
     std::uint64_t NumVoxels = 0;
+    std::uint64_t ASMemoryConsumption = 0;
+    std::uint64_t BuffersMemoryConsumption = 0;
 };
 
 struct SceneConfig
